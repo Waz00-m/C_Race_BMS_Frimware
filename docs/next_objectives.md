@@ -262,7 +262,8 @@ Confirm that the PCB voltage tap outputs really connect to the configured pins:
 - Cell/tap 5: GPIO32
 - Cell/tap 6: GPIO33
 
-If any PCB net does not match this order, update `esp32_pin_config.h`.
+If any PCB net does not match this order, update the active board profile in
+`bms_boards/prototype0_common/bms_prototype0_common.h`.
 
 ## Objective 3 - Calibrate Voltage Divider Ratios
 
@@ -272,8 +273,9 @@ After the raw truth table is captured, compute each effective divider ratio:
 effective_ratio = battery_side_tap_mV / adc_pin_mV
 ```
 
-Then update `BMS_DEFAULT_VOLTAGE_DIVIDER_RATIO_PPM` and remove the temporary
-global gain correction if it is no longer needed.
+Then update `BMS_DEFAULT_VOLTAGE_DIVIDER_RATIO_PPM` in the active board
+profile and remove the temporary global gain correction if it is no longer
+needed.
 
 ## Objective 4 - Add A Diagnostic Tap Command
 
@@ -323,3 +325,16 @@ Only after measurement truth is acceptable:
 - Decide whether to port OLED display behavior.
 - Decide whether to preserve Prototype-0 CSV output as a compatibility mode.
 - Decide the next production-facing telemetry packet format.
+
+## Objective 8 - Post Stage 9 Board Profile Work
+
+After Stage 9 and Stage 10, the next architecture work is:
+
+- Keep `BMS_BOARD_PROTOTYPE0_PROFILE0` as the calibrated analog INA240
+  Prototype-0 baseline.
+- Implement the current-sensor backend selection layer.
+- Add the INA226 current backend needed by `BMS_BOARD_PROTOTYPE0_PROFILE1`.
+- Continue improving the GUI configurator user-copy workflow for custom board
+  profiles.
+- Move persistent calibration into a config/NVM service instead of editing
+  source headers for every calibration update.

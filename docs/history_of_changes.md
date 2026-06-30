@@ -364,3 +364,82 @@ Removed or avoided:
   core scheduler path.
 - Calibration persistence commands from the monolithic sketch were not copied;
   persistent calibration still belongs in a future config/NVM service.
+
+### Stage 9 - Board Configuration Profiles
+
+Added:
+
+- `bms_boards/` board profile layer.
+- Board selector:
+  - `bms_boards/bms_board_config.h`
+- Active board profile:
+  - `BMS_BOARD_PROTOTYPE0_PROFILE0`
+- Prototype-0 shared hardware profile:
+  - voltage divider ratios
+  - voltage gain/offset arrays
+  - current calibration constants
+  - NTC constants
+  - ESP32 ADC pins
+  - OLED pins/address/display limits
+- Placeholder profile:
+  - `BMS_BOARD_PROTOTYPE0_PROFILE1`
+  - reserved for the future INA226 current-sensor variant
+- Board profile documentation:
+  - `docs/board_profiles.md`
+
+Changed:
+
+- `platformio.ini` now explicitly selects `BMS_BOARD_PROTOTYPE0_PROFILE0`.
+- `bms_measurement_config.h` now accepts board-profile overrides before using
+  default fallback values.
+- ESP32 ADC pin mapping now reads from the active board profile.
+- ESP32 OLED pin/display constants now read from the active board profile.
+- Boot banner now prints the compiled board name.
+
+Removed or avoided:
+
+- No behavior change was intended for Prototype-0 Profile0.
+- INA226 support was not implemented yet; Profile1 is guarded as a future
+  profile so it is not accidentally used with the analog INA240 current math.
+
+### Stage 10 - Board Profile Configurator
+
+Added:
+
+- `bms_board_configurator.py`.
+- GUI inputs for:
+  - board/profile name
+  - PlatformIO environment and upload port
+  - voltage divider ratios
+  - tap/ADC ratio calculation
+  - analog INA240 current constants
+  - INA226 placeholder values
+  - NTC constants
+  - ESP32 ADC pins
+  - OLED pins and display constants
+- Generated user profile output:
+  - `bms_boards/generated/<profile_folder>/bms_board_common.h`
+  - `bms_boards/generated/<profile_folder>/bms_board_profile.h`
+  - `platformio.user.ini`
+- GUI buttons for:
+  - generate profile
+  - build
+  - upload
+  - clean
+- `platformio.user.example.ini` proving external board profile inclusion.
+- `docs/board_configurator.md`.
+
+Changed:
+
+- `bms_boards/bms_board_config.h` now supports:
+  - `BMS_BOARD_CONFIG_FILE`
+- `.gitignore` now ignores:
+  - `platformio.user.ini`
+  - Python bytecode/cache files
+
+Removed or avoided:
+
+- The configurator does not edit `bms_core/`, `bms_hal/`, or platform source
+  files.
+- The generated INA226 profile remains a safe placeholder until the firmware
+  current-sensor backend exists.

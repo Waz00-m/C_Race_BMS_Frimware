@@ -5,19 +5,25 @@
 #include <Adafruit_SSD1306.h>
 #include <Wire.h>
 
-static const int OLED_SDA_PIN = 21;
-static const int OLED_SCL_PIN = 22;
-static const int OLED_PAGE_BUTTON_PIN = 18;
+#include "bms_board_config.h"
 
-static const int OLED_SCREEN_WIDTH = 128;
-static const int OLED_SCREEN_HEIGHT = 64;
-static const int OLED_RESET_PIN = -1;
-static const uint8_t OLED_I2C_ADDRESS = 0x3C;
+static const int OLED_SDA_PIN = BMS_OLED_SDA_PIN;
+static const int OLED_SCL_PIN = BMS_OLED_SCL_PIN;
+static const int OLED_PAGE_BUTTON_PIN = BMS_OLED_PAGE_BUTTON_PIN;
 
-static const uint16_t OLED_CELL_DISPLAY_MAX_MV = 4150U;
-static const uint16_t OLED_CELL_DISPLAY_MIN_MV = 0U;
-static const uint32_t OLED_BUTTON_DEBOUNCE_MS = 50UL;
-static const uint32_t OLED_CURRENT_NO_LOAD_THRESHOLD_MA = 2000UL;
+static const int OLED_SCREEN_WIDTH = BMS_OLED_SCREEN_WIDTH;
+static const int OLED_SCREEN_HEIGHT = BMS_OLED_SCREEN_HEIGHT;
+static const int OLED_RESET_PIN = BMS_OLED_RESET_PIN;
+static const uint8_t OLED_I2C_ADDRESS = BMS_OLED_I2C_ADDRESS;
+
+static const uint16_t OLED_CELL_DISPLAY_MAX_MV =
+    BMS_OLED_CELL_DISPLAY_MAX_MV;
+static const uint16_t OLED_CELL_DISPLAY_MIN_MV =
+    BMS_OLED_CELL_DISPLAY_MIN_MV;
+static const uint32_t OLED_BUTTON_DEBOUNCE_MS =
+    BMS_OLED_BUTTON_DEBOUNCE_MS;
+static const uint32_t OLED_CURRENT_NO_LOAD_THRESHOLD_MA =
+    BMS_OLED_CURRENT_NO_LOAD_THRESHOLD_MA;
 
 static Adafruit_SSD1306 g_display(
     OLED_SCREEN_WIDTH,

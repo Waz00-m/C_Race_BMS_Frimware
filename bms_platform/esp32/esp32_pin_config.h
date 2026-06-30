@@ -2,19 +2,20 @@
 #define ESP32_PIN_CONFIG_H
 
 #include "bms_adc_hal.h"
+#include "bms_board_config.h"
 
 static const int BMS_ESP32_ADC_PINS[BMS_ADC_CHANNEL_COUNT] = {
-    36,
-    39,
-    34,
-    35,
-    32,
-    33,
-    25,
-    26,
-    27,
-    14,
-    13,
+    BMS_ESP32_ADC_PIN_CELL_1,
+    BMS_ESP32_ADC_PIN_CELL_2,
+    BMS_ESP32_ADC_PIN_CELL_3,
+    BMS_ESP32_ADC_PIN_CELL_4,
+    BMS_ESP32_ADC_PIN_CELL_5,
+    BMS_ESP32_ADC_PIN_CELL_6,
+    BMS_ESP32_ADC_PIN_CURRENT,
+    BMS_ESP32_ADC_PIN_TEMP_1,
+    BMS_ESP32_ADC_PIN_TEMP_2,
+    BMS_ESP32_ADC_PIN_TEMP_3,
+    BMS_ESP32_ADC_PIN_TEMP_4,
 };
 
 #endif

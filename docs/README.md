@@ -3,7 +3,7 @@
 This folder contains the portable Drone BMS firmware library and the ESP32 first
 platform adapter.
 
-Current stage: Stage 8 sleep policy stub.
+Current stage: Stage 9 board configuration profiles.
 
 Implemented now:
 
@@ -42,6 +42,12 @@ Implemented now:
 - `SLEEP_REG` sleep decision and reason reporting.
 - Scheduler-driven sleep policy evaluation.
 - Diagnostic sleep response through `GET,SLEEP`.
+- Prototype-0 board profile selection through `bms_boards/`.
+- Active board profile: `BMS_BOARD_PROTOTYPE0_PROFILE0`.
+- Placeholder board profile: `BMS_BOARD_PROTOTYPE0_PROFILE1` for the future
+  INA226 current-sensor variant.
+- External generated board profile support through `BMS_BOARD_CONFIG_FILE`.
+- Python board profile configurator: `bms_board_configurator.py`.
 - Thin Arduino `setup()`/`loop()` wrapper.
 - Minimal UART HAL interface.
 - ESP32 UART HAL implementation that prints the boot banner.
@@ -52,6 +58,8 @@ Not implemented yet:
 - Wake-source policy.
 - SoC algorithm.
 - SoH algorithm.
+- INA226 current-sensor backend.
+- Persistent calibration storage.
 
 Preferred build command when PlatformIO is installed:
 

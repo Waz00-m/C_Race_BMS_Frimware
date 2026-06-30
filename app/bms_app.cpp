@@ -4,6 +4,7 @@
 
 #include "bms_app_config.h"
 #include "bms_adc_hal.h"
+#include "bms_board_config.h"
 #include "bms_diagnostic.h"
 #include "bms_display_hal.h"
 #include "bms_fault_supervisor.h"
@@ -390,15 +391,16 @@ bms_status_t BMS_App_Init(void)
     (void)BMS_FaultSupervisor_Update(&g_bms_context);
     (void)BMS_SleepPolicy_Evaluate(&g_bms_context);
 
-    char line[128];
+    char line[160];
     (void)snprintf(
         line,
         sizeof(line),
-        "%s,MODE=%s,CELLS=%u,TEMPS=%u",
+        "%s,MODE=%s,CELLS=%u,TEMPS=%u,BOARD=%s",
         BMS_APP_INIT_BANNER,
         BMS_SystemMode_ToString(g_bms_context.regs.sys.system_mode),
         (unsigned)BMS_NUM_CELLS,
-        (unsigned)BMS_NUM_TEMPERATURES);
+        (unsigned)BMS_NUM_TEMPERATURES,
+        BMS_BOARD_NAME);
 
     BMS_App_SendLine(line);
     BMS_App_PrintRegisterSnapshot();

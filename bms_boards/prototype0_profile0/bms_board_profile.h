@@ -1,0 +1,10 @@
+#ifndef BMS_PROTOTYPE0_PROFILE0_H
+#define BMS_PROTOTYPE0_PROFILE0_H
+
+#define BMS_BOARD_NAME "BMS_BOARD_PROTOTYPE0_PROFILE0"
+#define BMS_BOARD_PROFILE_ID (0U)
+#define BMS_CURRENT_SENSOR_TYPE BMS_CURRENT_SENSOR_ANALOG_INA240
+
+#include "../prototype0_common/bms_prototype0_common.h"
+
+#endif
