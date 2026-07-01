@@ -17,6 +17,7 @@ typedef struct {
 bms_status_t BMS_Context_Init(bms_context_t *ctx);
 void BMS_Context_Deinit(bms_context_t *ctx);
 bool BMS_Context_IsInitialized(const bms_context_t *ctx);
+bms_status_t BMS_Context_ResetConfigDefaults(bms_context_t *ctx);
 const bms_register_map_t *BMS_Context_GetRegisters(const bms_context_t *ctx);
 bms_register_map_t *BMS_Context_GetMutableRegisters(bms_context_t *ctx);
 

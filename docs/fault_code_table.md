@@ -14,7 +14,7 @@ registers provide the detailed source.
 | `0x1003` | Pack overvoltage | Fault supervisor | Pack voltage exceeds high pack fault threshold | `MEAS_REG.pack_mV` | Implemented |
 | `0x1004` | Pack undervoltage | Fault supervisor | Pack voltage is below low pack fault threshold | `MEAS_REG.pack_mV` | Implemented |
 | `0x2002` | Discharge overcurrent | Fault supervisor | Absolute current exceeds overcurrent fault threshold | `MEAS_REG.current_abs_mA` | Implemented |
-| `0x2003` | Current sensor fault | Future validation | Current sensor invalid or implausible | `ACQ_REG`, future current validation | Reserved |
+| `0x2003` | Current sensor fault | Fault supervisor | Current sensor invalid or not responding | `MEAS_REG.current_valid` | Implemented |
 | `0x3001` | Cell temperature high | Fault supervisor | One or more temperature channels exceed high fault threshold | `MEAS_REG.temperature_dC[]` | Implemented |
 | `0x3003` | Temperature sensor fault | Fault supervisor | Temperature channel open, short, or implausible | `MEAS_REG.temperature_valid_bitmap` | Implemented |
 | `0x4001` | ADC read failure | Fault supervisor | One or more expected ADC channels are not valid | `ACQ_REG.sensor_valid_bitmap` | Implemented |
@@ -47,7 +47,7 @@ registers provide the detailed source.
 `ACQ_REG.sensor_valid_bitmap` is not a fault code. It tells which acquisition
 channels have valid reads.
 
-For the current 11-channel map:
+For analog-current profiles, the current 11-channel map is:
 
 | Bit | Channel |
 |---|---|
@@ -66,3 +66,8 @@ For the current 11-channel map:
 `0x000007FF` means all 11 channels have valid reads. If a bit is missing, the
 primary fault may be `0x4001`, while this bitmap tells which channel caused the
 failure.
+
+For INA226 current profiles, the current ADC bit is not expected because current
+comes from I2C. In that case, `MEAS_REG.current_valid` is the current-sensor
+truth source, and a missing or failed INA226 read maps to primary fault
+`0x2003`.

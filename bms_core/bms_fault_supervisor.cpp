@@ -1,10 +1,18 @@
 #include "bms_fault_supervisor.h"
 
+#include "bms_adc_hal.h"
+#include "bms_current_sensor.h"
 #include "bms_fault_codes.h"
 
 static uint32_t BMS_FaultSupervisor_ExpectedSensorMask(void)
 {
-    return (1UL << BMS_ACQ_CHANNEL_COUNT) - 1UL;
+    uint32_t mask = (1UL << BMS_ACQ_CHANNEL_COUNT) - 1UL;
+
+    if (!BMS_CurrentSensor_UsesAdc()) {
+        mask &= ~(1UL << (uint8_t)BMS_ADC_CHANNEL_CURRENT);
+    }
+
+    return mask;
 }
 
 static void BMS_FaultSupervisor_SetPrimaryIfEmpty(

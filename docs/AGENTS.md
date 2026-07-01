@@ -37,11 +37,14 @@ The target architecture is:
 
 ## Current Implementation Position
 
-The project has completed Stage 8. The next implementation target should be
-chosen after Stage 8 hardware validation.
+The project has completed Stage 14. The next implementation target should be
+chosen after hardware validation of the active profile, INA226 profile,
+configurator-generated profiles, and the config/NVM diagnostic commands.
 
 Prototype telemetry tooling exists through `p0_bms_dashboard.py`, but the
-portable firmware library is just starting.
+portable firmware library now has its staged ESP32 foundation, board-profile
+layer, drag/drop configurator workflow tools, current-sensor backend layer, and
+INA226 I2C current path, and a first config/NVM service.
 
 Stage 1 proved:
 
@@ -121,8 +124,66 @@ Stage 8 proved:
 - Diagnostic command `GET,SLEEP` can query sleep policy state.
 - ESP32 deep sleep entry remains intentionally stubbed/not implemented.
 
-Do not skip ahead into ADC conversion, CAN, balancing, high-current validation,
-or production sleep behavior until the staged foundation exists.
+Stage 9 proved:
+
+- Board profiles can select hardware-specific values outside the portable core.
+- `BMS_BOARD_PROTOTYPE0_PROFILE0` is the calibrated Prototype-0 analog-current
+  baseline.
+- `BMS_BOARD_PROTOTYPE0_PROFILE1` is reserved for the INA226 current-sensor
+  variant.
+- `BMS_BOARD_CONFIG_FILE` can include an external generated profile.
+
+Stage 10 proved:
+
+- `bms_board_configurator.py` can generate board profile headers and a local
+  PlatformIO user config.
+- The configurator can build, upload, and clean through PlatformIO without
+  editing the portable core.
+
+Stage 11 proved:
+
+- Current-sensor conversion is separated from the measurement scheduler.
+- Analog INA240 and analog ACS772 backends are selectable by board profile.
+- Shared analog current filtering, gain/offset correction, and no-load
+  hysteresis live in the current-sensor backend.
+
+Stage 12 proved:
+
+- I2C HAL interface exists.
+- ESP32 Wire-backed I2C adapter exists.
+- INA226 current backend can configure calibration and read current over I2C.
+- `BMS_BOARD_PROTOTYPE0_PROFILE1` can build as an INA226 current profile.
+- Missing INA226 hardware reports invalid current instead of stopping firmware
+  initialization.
+
+Stage 12.5 proved:
+
+- Configurator drag/drop hardware blocks can fill detailed profile fields.
+- Generated profiles now include a small manifest file.
+- Generated profile cleanup can delete selected generated profile files.
+- Generated profile build-cache cleanup can remove selected `.pio/build/<env>`
+  directories.
+
+Stage 13 proved:
+
+- NVM HAL interface exists.
+- ESP32 Preferences-backed NVM adapter exists.
+- Portable config service can calculate CRC, load, save, and reset `CFG_REG`.
+- Voltage and NTC measurement calibration values are now read from `CFG_REG`.
+- Diagnostic commands can query and explicitly save/load/reset config.
+
+Stage 14 proved:
+
+- Diagnostic `CFG,SET,...` commands can edit runtime config without rebuilding.
+- Voltage divider ratio, voltage gain, voltage offset, NTC ADC gain, NTC ADC
+  offset, capacity, and threshold edits are range checked inside `bms_config`.
+- User-facing diagnostic channel indexes are one-based.
+- `CFG_REG.config_dirty` reports unsaved config edits.
+- `CFG,SAVE` remains the explicit flash-write action.
+
+Do not skip ahead into CAN, balancing, high-current validation, production
+sleep behavior, or real SoH until the staged foundation and hardware truth are
+validated.
 
 ## Hard Rules
 

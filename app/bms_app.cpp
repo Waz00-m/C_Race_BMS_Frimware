@@ -5,9 +5,11 @@
 #include "bms_app_config.h"
 #include "bms_adc_hal.h"
 #include "bms_board_config.h"
+#include "bms_config.h"
 #include "bms_diagnostic.h"
 #include "bms_display_hal.h"
 #include "bms_fault_supervisor.h"
+#include "bms_i2c_hal.h"
 #include "bms_lock_hal.h"
 #include "bms_measurement.h"
 #include "bms_register_snapshot.h"
@@ -323,6 +325,12 @@ bms_status_t BMS_App_Init(void)
         return adc_status;
     }
 
+    const bms_status_t i2c_status = BMS_HAL_I2C_Init();
+    if (i2c_status != BMS_STATUS_OK) {
+        BMS_HAL_UART_Send("BMS I2C HAL INIT FAILED\r\n");
+        return i2c_status;
+    }
+
     const bms_status_t display_status = BMS_HAL_Display_Init();
     if (display_status != BMS_STATUS_OK) {
         BMS_HAL_UART_Send("BMS DISPLAY INIT SKIPPED\r\n");
@@ -332,6 +340,12 @@ bms_status_t BMS_App_Init(void)
     if (status != BMS_STATUS_OK) {
         BMS_HAL_UART_Send("BMS INIT FAILED\r\n");
         return status;
+    }
+
+    const bms_status_t config_status = BMS_Config_Init(&g_bms_context);
+    if (config_status != BMS_STATUS_OK) {
+        BMS_HAL_UART_Send("BMS CONFIG INIT SKIPPED\r\n");
+        BMS_Config_RefreshCrc(&g_bms_context);
     }
 
     const bms_status_t measurement_status =
@@ -418,7 +432,7 @@ bms_status_t BMS_App_Init(void)
     }
 
     BMS_App_SendLine("BMS SCHEDULER TICK STARTED");
-    BMS_App_SendLine("DIAG READY: HELP, GET,SNAPSHOT, GET,VOLT, GET,CURRENT, GET,TEMP, GET,FAULT, GET,SLEEP, GET,TAPS");
+    BMS_App_SendLine("DIAG READY: HELP, GET,SNAPSHOT, GET,VOLT, GET,CURRENT, GET,TEMP, GET,FAULT, GET,SLEEP, GET,TAPS, GET,CFG, CFG,SET, CFG,SAVE, CFG,LOAD, CFG,RESET");
     return BMS_STATUS_OK;
 }
 

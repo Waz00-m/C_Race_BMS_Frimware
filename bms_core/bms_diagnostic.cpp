@@ -1,9 +1,12 @@
 #include "bms_diagnostic.h"
 
 #include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
 
 #include "bms_adc_hal.h"
+#include "bms_config.h"
+#include "bms_fault_codes.h"
 #include "bms_register_snapshot.h"
 #include "bms_register_strings.h"
 #include "bms_uart_hal.h"
@@ -101,7 +104,7 @@ static const char *BMS_Diagnostic_PayloadAfterBmsPrefix(const char *command)
 static void BMS_Diagnostic_SendHelp(void)
 {
     BMS_Diagnostic_SendLine(
-        "RESP,HELP,CMDS=HELP|GET,SNAPSHOT|GET,VOLT|GET,CURRENT|GET,TEMP|GET,FAULT|GET,SLEEP|GET,TAPS");
+        "RESP,HELP,CMDS=HELP|GET,SNAPSHOT|GET,VOLT|GET,CURRENT|GET,TEMP|GET,FAULT|GET,SLEEP|GET,TAPS|GET,CFG|CFG,SET,...|CFG,SAVE|CFG,LOAD|CFG,RESET");
 }
 
 static void BMS_Diagnostic_SendSnapshot(const bms_register_snapshot_t *snapshot)
@@ -259,6 +262,358 @@ static void BMS_Diagnostic_SendTaps(const bms_register_snapshot_t *snapshot)
     BMS_Diagnostic_SendLine(line);
 }
 
+static void BMS_Diagnostic_SendConfig(const bms_register_snapshot_t *snapshot)
+{
+    char line[256];
+    const bms_cfg_reg_t *cfg = &snapshot->regs.cfg;
+
+    (void)snprintf(
+        line,
+        sizeof(line),
+        "RESP,CFG,VERSION=%lu,CRC=0x%08lX,DIRTY=%u,CAPACITY_MAH=%lu",
+        (unsigned long)cfg->config_version,
+        (unsigned long)cfg->config_crc,
+        (unsigned)cfg->config_dirty,
+        (unsigned long)cfg->battery_capacity_mAh);
+    BMS_Diagnostic_SendLine(line);
+
+    (void)snprintf(
+        line,
+        sizeof(line),
+        "RESP,CFG,THRESHOLDS,VLOW_WARN=%u,VLOW_FAULT=%u,VHIGH_WARN=%u,VHIGH_FAULT=%u,PACK_LOW=%u,PACK_HIGH=%u,IMBALANCE=%u,CUR_WARN=%ld,CUR_FAULT=%ld,TEMP_WARN=%d,TEMP_FAULT=%d",
+        (unsigned)cfg->voltage_thresholds_mV[
+            BMS_VOLTAGE_THRESHOLD_CELL_LOW_WARNING_MV],
+        (unsigned)cfg->voltage_thresholds_mV[
+            BMS_VOLTAGE_THRESHOLD_CELL_LOW_FAULT_MV],
+        (unsigned)cfg->voltage_thresholds_mV[
+            BMS_VOLTAGE_THRESHOLD_CELL_HIGH_WARNING_MV],
+        (unsigned)cfg->voltage_thresholds_mV[
+            BMS_VOLTAGE_THRESHOLD_CELL_HIGH_FAULT_MV],
+        (unsigned)cfg->voltage_thresholds_mV[
+            BMS_VOLTAGE_THRESHOLD_PACK_LOW_FAULT_MV],
+        (unsigned)cfg->voltage_thresholds_mV[
+            BMS_VOLTAGE_THRESHOLD_PACK_HIGH_FAULT_MV],
+        (unsigned)cfg->voltage_thresholds_mV[
+            BMS_VOLTAGE_THRESHOLD_CELL_IMBALANCE_WARNING_MV],
+        (long)cfg->current_thresholds_mA[
+            BMS_CURRENT_THRESHOLD_OVERCURRENT_WARNING_MA],
+        (long)cfg->current_thresholds_mA[
+            BMS_CURRENT_THRESHOLD_OVERCURRENT_FAULT_MA],
+        (int)cfg->temperature_thresholds_dC[
+            BMS_TEMPERATURE_THRESHOLD_HIGH_WARNING_DC],
+        (int)cfg->temperature_thresholds_dC[
+            BMS_TEMPERATURE_THRESHOLD_HIGH_FAULT_DC]);
+    BMS_Diagnostic_SendLine(line);
+
+    (void)snprintf(
+        line,
+        sizeof(line),
+        "RESP,CFG,VOLT_RATIO_PPM=[%lu,%lu,%lu,%lu,%lu,%lu]",
+        (unsigned long)cfg->voltage_divider_ratio_ppm[0],
+        (unsigned long)cfg->voltage_divider_ratio_ppm[1],
+        (unsigned long)cfg->voltage_divider_ratio_ppm[2],
+        (unsigned long)cfg->voltage_divider_ratio_ppm[3],
+        (unsigned long)cfg->voltage_divider_ratio_ppm[4],
+        (unsigned long)cfg->voltage_divider_ratio_ppm[5]);
+    BMS_Diagnostic_SendLine(line);
+
+    (void)snprintf(
+        line,
+        sizeof(line),
+        "RESP,CFG,VOLT_GAIN_PPM=[%ld,%ld,%ld,%ld,%ld,%ld]",
+        (long)cfg->voltage_gain_ppm[0],
+        (long)cfg->voltage_gain_ppm[1],
+        (long)cfg->voltage_gain_ppm[2],
+        (long)cfg->voltage_gain_ppm[3],
+        (long)cfg->voltage_gain_ppm[4],
+        (long)cfg->voltage_gain_ppm[5]);
+    BMS_Diagnostic_SendLine(line);
+
+    (void)snprintf(
+        line,
+        sizeof(line),
+        "RESP,CFG,VOLT_OFFSET_MV=[%ld,%ld,%ld,%ld,%ld,%ld]",
+        (long)cfg->voltage_offset_mV[0],
+        (long)cfg->voltage_offset_mV[1],
+        (long)cfg->voltage_offset_mV[2],
+        (long)cfg->voltage_offset_mV[3],
+        (long)cfg->voltage_offset_mV[4],
+        (long)cfg->voltage_offset_mV[5]);
+    BMS_Diagnostic_SendLine(line);
+
+    (void)snprintf(
+        line,
+        sizeof(line),
+        "RESP,CFG,NTC_GAIN_PPM=[%ld,%ld,%ld,%ld],NTC_OFFSET_MV=[%d,%d,%d,%d]",
+        (long)cfg->ntc_adc_gain_ppm[0],
+        (long)cfg->ntc_adc_gain_ppm[1],
+        (long)cfg->ntc_adc_gain_ppm[2],
+        (long)cfg->ntc_adc_gain_ppm[3],
+        (int)cfg->ntc_adc_offset_mV[0],
+        (int)cfg->ntc_adc_offset_mV[1],
+        (int)cfg->ntc_adc_offset_mV[2],
+        (int)cfg->ntc_adc_offset_mV[3]);
+    BMS_Diagnostic_SendLine(line);
+}
+
+static void BMS_Diagnostic_SendConfigStatus(
+    const char *action,
+    bms_status_t status,
+    const bms_context_t *ctx)
+{
+    char line[128];
+    const uint32_t crc = BMS_Context_IsInitialized(ctx) ?
+        ctx->regs.cfg.config_crc :
+        0UL;
+
+    (void)snprintf(
+        line,
+        sizeof(line),
+        "RESP,CFG,%s,STATUS=%s,CRC=0x%08lX,DIRTY=%u",
+        action,
+        BMS_Status_ToString(status),
+        (unsigned long)crc,
+        (unsigned)(BMS_Context_IsInitialized(ctx) ?
+            ctx->regs.cfg.config_dirty :
+            false));
+    BMS_Diagnostic_SendLine(line);
+}
+
+static bool BMS_Diagnostic_ParseInt32(const char *text, int32_t *value)
+{
+    if ((text == NULL) || (value == NULL)) {
+        return false;
+    }
+
+    char *end = NULL;
+    const long parsed = strtol(text, &end, 0);
+    if ((end == text) || (*end != '\0')) {
+        return false;
+    }
+
+    *value = (int32_t)parsed;
+    return true;
+}
+
+static bool BMS_Diagnostic_ParseUint32(const char *text, uint32_t *value)
+{
+    if ((text == NULL) || (value == NULL) || (text[0] == '-')) {
+        return false;
+    }
+
+    char *end = NULL;
+    const unsigned long parsed = strtoul(text, &end, 0);
+    if ((end == text) || (*end != '\0')) {
+        return false;
+    }
+
+    *value = (uint32_t)parsed;
+    return true;
+}
+
+static uint8_t BMS_Diagnostic_SplitTokens(
+    char *text,
+    char *tokens[],
+    uint8_t max_tokens)
+{
+    uint8_t count = 0U;
+    char *cursor = text;
+
+    while ((cursor != NULL) && (*cursor != '\0') && (count < max_tokens)) {
+        while (*cursor == ' ') {
+            cursor++;
+        }
+
+        if (*cursor == '\0') {
+            break;
+        }
+
+        tokens[count++] = cursor;
+
+        while ((*cursor != '\0') && (*cursor != ' ')) {
+            cursor++;
+        }
+
+        if (*cursor == ' ') {
+            *cursor = '\0';
+            cursor++;
+        }
+    }
+
+    return count;
+}
+
+typedef struct {
+    const char *name;
+    bms_config_threshold_id_t id;
+} bms_diagnostic_threshold_name_t;
+
+static bool BMS_Diagnostic_LookupThreshold(
+    const char *name,
+    bms_config_threshold_id_t *id)
+{
+    static const bms_diagnostic_threshold_name_t names[] = {
+        {"CELL_LOW_WARN", BMS_CONFIG_THRESHOLD_CELL_LOW_WARN},
+        {"VLOW_WARN", BMS_CONFIG_THRESHOLD_CELL_LOW_WARN},
+        {"CELL_LOW_FAULT", BMS_CONFIG_THRESHOLD_CELL_LOW_FAULT},
+        {"VLOW_FAULT", BMS_CONFIG_THRESHOLD_CELL_LOW_FAULT},
+        {"CELL_HIGH_WARN", BMS_CONFIG_THRESHOLD_CELL_HIGH_WARN},
+        {"VHIGH_WARN", BMS_CONFIG_THRESHOLD_CELL_HIGH_WARN},
+        {"CELL_HIGH_FAULT", BMS_CONFIG_THRESHOLD_CELL_HIGH_FAULT},
+        {"VHIGH_FAULT", BMS_CONFIG_THRESHOLD_CELL_HIGH_FAULT},
+        {"PACK_LOW_FAULT", BMS_CONFIG_THRESHOLD_PACK_LOW_FAULT},
+        {"PACK_HIGH_FAULT", BMS_CONFIG_THRESHOLD_PACK_HIGH_FAULT},
+        {"CELL_IMBALANCE_WARN", BMS_CONFIG_THRESHOLD_CELL_IMBALANCE_WARN},
+        {"IMBALANCE_WARN", BMS_CONFIG_THRESHOLD_CELL_IMBALANCE_WARN},
+        {"OVERCURRENT_WARN", BMS_CONFIG_THRESHOLD_OVERCURRENT_WARN},
+        {"CUR_WARN", BMS_CONFIG_THRESHOLD_OVERCURRENT_WARN},
+        {"OVERCURRENT_FAULT", BMS_CONFIG_THRESHOLD_OVERCURRENT_FAULT},
+        {"CUR_FAULT", BMS_CONFIG_THRESHOLD_OVERCURRENT_FAULT},
+        {"TEMP_HIGH_WARN", BMS_CONFIG_THRESHOLD_TEMP_HIGH_WARN},
+        {"TEMP_WARN", BMS_CONFIG_THRESHOLD_TEMP_HIGH_WARN},
+        {"TEMP_HIGH_FAULT", BMS_CONFIG_THRESHOLD_TEMP_HIGH_FAULT},
+        {"TEMP_FAULT", BMS_CONFIG_THRESHOLD_TEMP_HIGH_FAULT},
+    };
+
+    if ((name == NULL) || (id == NULL)) {
+        return false;
+    }
+
+    for (uint8_t i = 0U; i < (uint8_t)(sizeof(names) / sizeof(names[0])); ++i) {
+        if (strcmp(name, names[i].name) == 0) {
+            *id = names[i].id;
+            return true;
+        }
+    }
+
+    return false;
+}
+
+static void BMS_Diagnostic_SendConfigSetStatus(
+    const char *field,
+    const char *name,
+    int32_t index,
+    int32_t value,
+    bms_status_t status,
+    const bms_context_t *ctx)
+{
+    char line[192];
+    const uint32_t crc = BMS_Context_IsInitialized(ctx) ?
+        ctx->regs.cfg.config_crc :
+        0UL;
+    const unsigned dirty = BMS_Context_IsInitialized(ctx) ?
+        (unsigned)ctx->regs.cfg.config_dirty :
+        0U;
+
+    if (name != NULL) {
+        (void)snprintf(
+            line,
+            sizeof(line),
+            "RESP,CFG,SET,STATUS=%s,FIELD=%s,NAME=%s,VALUE=%ld,DIRTY=%u,CRC=0x%08lX",
+            BMS_Status_ToString(status),
+            field,
+            name,
+            (long)value,
+            dirty,
+            (unsigned long)crc);
+    } else if (index > 0L) {
+        (void)snprintf(
+            line,
+            sizeof(line),
+            "RESP,CFG,SET,STATUS=%s,FIELD=%s,INDEX=%ld,VALUE=%ld,DIRTY=%u,CRC=0x%08lX",
+            BMS_Status_ToString(status),
+            field,
+            (long)index,
+            (long)value,
+            dirty,
+            (unsigned long)crc);
+    } else {
+        (void)snprintf(
+            line,
+            sizeof(line),
+            "RESP,CFG,SET,STATUS=%s,FIELD=%s,VALUE=%ld,DIRTY=%u,CRC=0x%08lX",
+            BMS_Status_ToString(status),
+            field,
+            (long)value,
+            dirty,
+            (unsigned long)crc);
+    }
+
+    BMS_Diagnostic_SendLine(line);
+}
+
+static void BMS_Diagnostic_ExecuteConfigSet(
+    bms_context_t *ctx,
+    char *payload)
+{
+    char *tokens[5] = {0};
+    const uint8_t count = BMS_Diagnostic_SplitTokens(payload, tokens, 5U);
+    const char *field = (count >= 3U) ? tokens[2] : "UNKNOWN";
+    const char *name = NULL;
+    int32_t index = -1L;
+    int32_t value = 0L;
+    bms_status_t status = BMS_STATUS_INVALID_ARGUMENT;
+
+    if ((count == 4U) && (strcmp(field, "CAPACITY") == 0)) {
+        uint32_t parsed = 0UL;
+        if (BMS_Diagnostic_ParseUint32(tokens[3], &parsed)) {
+            value = (int32_t)parsed;
+            status = BMS_Config_SetCapacityMah(ctx, parsed);
+        }
+    } else if ((count == 5U) && (strcmp(field, "THRESHOLD") == 0)) {
+        bms_config_threshold_id_t threshold = BMS_CONFIG_THRESHOLD_CELL_LOW_WARN;
+        name = tokens[3];
+        if (BMS_Diagnostic_LookupThreshold(tokens[3], &threshold) &&
+            BMS_Diagnostic_ParseInt32(tokens[4], &value)) {
+            status = BMS_Config_SetThreshold(ctx, threshold, value);
+        }
+    } else if (count == 5U) {
+        uint32_t parsed_index = 0UL;
+        if (BMS_Diagnostic_ParseUint32(tokens[3], &parsed_index) &&
+            BMS_Diagnostic_ParseInt32(tokens[4], &value) &&
+            (parsed_index > 0UL) &&
+            (parsed_index <= 255UL)) {
+            const uint8_t zero_based_index = (uint8_t)(parsed_index - 1UL);
+            index = (int32_t)parsed_index;
+
+            if (strcmp(field, "VOLT_RATIO") == 0) {
+                status = BMS_Config_SetVoltageRatioPpm(
+                    ctx,
+                    zero_based_index,
+                    (uint32_t)value);
+            } else if (strcmp(field, "VOLT_GAIN") == 0) {
+                status = BMS_Config_SetVoltageGainPpm(
+                    ctx,
+                    zero_based_index,
+                    value);
+            } else if (strcmp(field, "VOLT_OFFSET") == 0) {
+                status = BMS_Config_SetVoltageOffsetMv(
+                    ctx,
+                    zero_based_index,
+                    value);
+            } else if (strcmp(field, "NTC_GAIN") == 0) {
+                status = BMS_Config_SetNtcGainPpm(
+                    ctx,
+                    zero_based_index,
+                    value);
+            } else if (strcmp(field, "NTC_OFFSET") == 0) {
+                status = BMS_Config_SetNtcOffsetMv(
+                    ctx,
+                    zero_based_index,
+                    value);
+            }
+        }
+    }
+
+    BMS_Diagnostic_SendConfigSetStatus(
+        field,
+        name,
+        index,
+        value,
+        status,
+        ctx);
+}
+
 static bms_diag_command_id_t BMS_Diagnostic_Classify(const char *payload)
 {
     if (strcmp(payload, "HELP") == 0) {
@@ -293,6 +648,27 @@ static bms_diag_command_id_t BMS_Diagnostic_Classify(const char *payload)
         return BMS_DIAG_COMMAND_GET_TAPS;
     }
 
+    if (strcmp(payload, "GET CFG") == 0) {
+        return BMS_DIAG_COMMAND_GET_CFG;
+    }
+
+    if ((strncmp(payload, "CFG SET", 7U) == 0) &&
+        ((payload[7U] == '\0') || (payload[7U] == ' '))) {
+        return BMS_DIAG_COMMAND_CFG_SET;
+    }
+
+    if (strcmp(payload, "CFG SAVE") == 0) {
+        return BMS_DIAG_COMMAND_CFG_SAVE;
+    }
+
+    if (strcmp(payload, "CFG LOAD") == 0) {
+        return BMS_DIAG_COMMAND_CFG_LOAD;
+    }
+
+    if (strcmp(payload, "CFG RESET") == 0) {
+        return BMS_DIAG_COMMAND_CFG_RESET;
+    }
+
     return BMS_DIAG_COMMAND_NONE;
 }
 
@@ -321,6 +697,36 @@ static void BMS_Diagnostic_ExecuteCommand(
 
     if (command_id == BMS_DIAG_COMMAND_HELP) {
         BMS_Diagnostic_SendHelp();
+        ctx->regs.diag.diagnostic_active = false;
+        return;
+    }
+
+    if (command_id == BMS_DIAG_COMMAND_CFG_SET) {
+        BMS_Diagnostic_ExecuteConfigSet(ctx, (char *)payload);
+        ctx->regs.diag.diagnostic_active = false;
+        return;
+    }
+
+    if (command_id == BMS_DIAG_COMMAND_CFG_SAVE) {
+        const bms_status_t status = BMS_Config_Save(ctx);
+        BMS_Diagnostic_SendConfigStatus("SAVE", status, ctx);
+        ctx->regs.diag.diagnostic_active = false;
+        return;
+    }
+
+    if (command_id == BMS_DIAG_COMMAND_CFG_LOAD) {
+        const bms_status_t status = BMS_Config_Load(ctx);
+        if (status == BMS_STATUS_OK) {
+            BMS_Config_RefreshCrc(ctx);
+        }
+        BMS_Diagnostic_SendConfigStatus("LOAD", status, ctx);
+        ctx->regs.diag.diagnostic_active = false;
+        return;
+    }
+
+    if (command_id == BMS_DIAG_COMMAND_CFG_RESET) {
+        const bms_status_t status = BMS_Config_ResetToDefaults(ctx);
+        BMS_Diagnostic_SendConfigStatus("RESET", status, ctx);
         ctx->regs.diag.diagnostic_active = false;
         return;
     }
@@ -355,6 +761,9 @@ static void BMS_Diagnostic_ExecuteCommand(
         break;
     case BMS_DIAG_COMMAND_GET_TAPS:
         BMS_Diagnostic_SendTaps(&snapshot);
+        break;
+    case BMS_DIAG_COMMAND_GET_CFG:
+        BMS_Diagnostic_SendConfig(&snapshot);
         break;
     default:
         break;

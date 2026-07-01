@@ -48,14 +48,14 @@ Prototype-0 family:
 - voltage gain/offset correction
 - thermistor beta/circuit constants
 - ESP32 ADC pins
+- shared I2C pins and bus speed
 - OLED pins and display limits
 
 `prototype0_profile0/bms_board_profile.h` selects the analog INA240 current
 path.
 
-`prototype0_profile1/bms_board_profile.h` is a reserved placeholder for the
-coming INA226 variant. It intentionally requires a future INA226 backend before
-it can be selected safely.
+`prototype0_profile1/bms_board_profile.h` selects the INA226 digital current
+path on the shared I2C bus.
 
 ## Changing Voltage Divider Values
 
@@ -92,15 +92,39 @@ BMS_CURRENT_READING_GAIN
 BMS_CURRENT_OFFSET_MA
 ```
 
-Profile1 is reserved for:
+Analog ACS772 Hall sensors can be selected with:
+
+```cpp
+#define BMS_CURRENT_SENSOR_TYPE BMS_CURRENT_SENSOR_ANALOG_ACS772
+```
+
+and:
+
+```cpp
+BMS_CURRENT_ZERO_MV
+BMS_CURRENT_HALL_SENSITIVITY_MV_PER_A
+BMS_CURRENT_SENSOR_POLARITY
+```
+
+Profile1 uses:
 
 ```cpp
 #define BMS_CURRENT_SENSOR_TYPE BMS_CURRENT_SENSOR_INA226
 ```
 
-The INA226 backend is not implemented yet. When it exists, it should read
-current through a digital current-sensor service instead of the ESP32 ADC
-formula.
+and:
+
+```cpp
+BMS_INA226_I2C_ADDRESS
+BMS_INA226_SHUNT_OHM
+BMS_INA226_MAX_EXPECTED_CURRENT_MA
+BMS_INA226_CONFIG_REGISTER
+```
+
+The INA226 backend reads current through I2C instead of the ESP32 ADC current
+channel. If the INA226 is absent or not responding, the firmware keeps running
+and reports `MEAS_REG.current_valid = false`, allowing the fault supervisor to
+raise the current sensor fault path.
 
 ## Changing Thermistor Values
 

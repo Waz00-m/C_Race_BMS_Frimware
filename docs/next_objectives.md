@@ -326,15 +326,20 @@ Only after measurement truth is acceptable:
 - Decide whether to preserve Prototype-0 CSV output as a compatibility mode.
 - Decide the next production-facing telemetry packet format.
 
-## Objective 8 - Post Stage 9 Board Profile Work
+## Objective 8 - Post Stage 14 Board Profile Work
 
-After Stage 9 and Stage 10, the next architecture work is:
+After Stage 9 through Stage 14, the next architecture work is:
 
 - Keep `BMS_BOARD_PROTOTYPE0_PROFILE0` as the calibrated analog INA240
   Prototype-0 baseline.
-- Implement the current-sensor backend selection layer.
-- Add the INA226 current backend needed by `BMS_BOARD_PROTOTYPE0_PROFILE1`.
-- Continue improving the GUI configurator user-copy workflow for custom board
-  profiles.
-- Move persistent calibration into a config/NVM service instead of editing
-  source headers for every calibration update.
+- Continue the sensor backend selection layer beyond current sensing.
+- Validate the INA226 backend on `BMS_BOARD_PROTOTYPE0_PROFILE1` hardware once
+  that PCB/profile exists.
+- Add future AFE voltage/current backend support, such as LTC6811.
+- Continue improving the GUI configurator from the Stage 12.5 drag/drop board
+  builder toward richer hardware modules, compatibility checks, and generated
+  backend scaffolding.
+- Validate the Stage 14 runtime config edit commands on hardware, then add
+  dashboard/configurator forms on top of them.
+- Define the tester MCU firmware architecture and first UART-based PASS/FAIL
+  test flows.

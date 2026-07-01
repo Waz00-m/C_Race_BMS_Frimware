@@ -6,6 +6,7 @@
 #include <Wire.h>
 
 #include "bms_board_config.h"
+#include "bms_i2c_hal.h"
 
 static const int OLED_SDA_PIN = BMS_OLED_SDA_PIN;
 static const int OLED_SCL_PIN = BMS_OLED_SCL_PIN;
@@ -217,7 +218,11 @@ static void BMS_ESP32_Display_Render(const bms_register_snapshot_t *snapshot)
 
 bms_status_t BMS_HAL_Display_Init(void)
 {
-    Wire.begin(OLED_SDA_PIN, OLED_SCL_PIN);
+    const bms_status_t i2c_status = BMS_HAL_I2C_Init();
+    if (i2c_status != BMS_STATUS_OK) {
+        return i2c_status;
+    }
+
     pinMode(OLED_PAGE_BUTTON_PIN, INPUT_PULLUP);
 
     g_display_ready = g_display.begin(

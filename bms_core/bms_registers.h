@@ -82,6 +82,12 @@ typedef struct {
 typedef struct {
     uint32_t config_version;
     uint32_t config_crc;
+    bool config_dirty;
+    uint32_t voltage_divider_ratio_ppm[BMS_NUM_CELLS];
+    int32_t voltage_gain_ppm[BMS_NUM_CELLS];
+    int32_t voltage_offset_mV[BMS_NUM_CELLS];
+    int32_t ntc_adc_gain_ppm[BMS_NUM_TEMPERATURES];
+    int16_t ntc_adc_offset_mV[BMS_NUM_TEMPERATURES];
     uint16_t voltage_thresholds_mV[BMS_THRESHOLD_COUNT];
     int32_t current_thresholds_mA[BMS_THRESHOLD_COUNT];
     int16_t temperature_thresholds_dC[BMS_THRESHOLD_COUNT];

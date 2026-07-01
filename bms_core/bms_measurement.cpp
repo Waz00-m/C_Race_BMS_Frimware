@@ -4,11 +4,8 @@
 #include <stdint.h>
 
 #include "bms_adc_hal.h"
+#include "bms_current_sensor.h"
 #include "bms_measurement_config.h"
-
-static bool g_current_filter_ready = false;
-static float g_filtered_current_mA = 0.0f;
-static bool g_current_no_load_latched = true;
 
 static bms_adc_channel_t BMS_Measurement_CellAdcChannel(uint8_t cell_index)
 {
@@ -83,16 +80,28 @@ static bms_status_t BMS_Measurement_ReadAdc(
 
 static uint16_t BMS_Measurement_ConvertTapToMilliVolts(
     uint16_t adc_mV,
-    uint8_t cell_index)
+    uint8_t cell_index,
+    const bms_cfg_reg_t *cfg)
 {
-    int64_t tap_mV = (int64_t)adc_mV *
-                     (int64_t)BMS_DEFAULT_VOLTAGE_DIVIDER_RATIO_PPM[cell_index];
+    uint32_t ratio_ppm = BMS_DEFAULT_VOLTAGE_DIVIDER_RATIO_PPM[cell_index];
+    int32_t gain_ppm = BMS_DEFAULT_VOLTAGE_GAIN_PPM[cell_index];
+    int32_t offset_mV = BMS_DEFAULT_VOLTAGE_OFFSET_MV[cell_index];
+
+    if (cfg != NULL) {
+        if (cfg->voltage_divider_ratio_ppm[cell_index] != 0UL) {
+            ratio_ppm = cfg->voltage_divider_ratio_ppm[cell_index];
+        }
+        if (cfg->voltage_gain_ppm[cell_index] != 0L) {
+            gain_ppm = cfg->voltage_gain_ppm[cell_index];
+        }
+        offset_mV = cfg->voltage_offset_mV[cell_index];
+    }
+
+    int64_t tap_mV = (int64_t)adc_mV * (int64_t)ratio_ppm;
 
     tap_mV = tap_mV / 1000000LL;
-    tap_mV = (tap_mV *
-              (int64_t)BMS_DEFAULT_VOLTAGE_GAIN_PPM[cell_index]) /
-             1000000LL;
-    tap_mV += BMS_DEFAULT_VOLTAGE_OFFSET_MV[cell_index];
+    tap_mV = (tap_mV * (int64_t)gain_ppm) / 1000000LL;
+    tap_mV += offset_mV;
 
     if (tap_mV < 0LL) {
         return 0U;
@@ -110,82 +119,10 @@ static uint32_t BMS_Measurement_AllTemperatureValidMask(void)
     return (1UL << BMS_NUM_TEMPERATURES) - 1UL;
 }
 
-static int32_t BMS_Measurement_LimitCurrentMilliAmps(float current_mA)
-{
-    if (current_mA > 2147483000.0f) {
-        return INT32_MAX;
-    }
-
-    if (current_mA < -2147483000.0f) {
-        return INT32_MIN;
-    }
-
-    return (int32_t)lroundf(current_mA);
-}
-
-static int32_t BMS_Measurement_ProcessCurrentMilliAmps(
-    uint16_t adc_mV,
-    bool *current_valid)
-{
-    float corrected_adc_mV =
-        ((float)adc_mV * BMS_CURRENT_ADC_GAIN_CORRECTION) +
-        BMS_CURRENT_ADC_OFFSET_MV;
-
-    if ((corrected_adc_mV < (float)BMS_ADC_LOW_VALID_MV) ||
-        (corrected_adc_mV > (float)BMS_CURRENT_ADC_HIGH_VALID_MV)) {
-        if (current_valid != NULL) {
-            *current_valid = false;
-        }
-
-        g_current_filter_ready = false;
-        g_filtered_current_mA = 0.0f;
-        g_current_no_load_latched = true;
-        return 0L;
-    }
-
-    if (current_valid != NULL) {
-        *current_valid = true;
-    }
-
-    const float delta_mV = corrected_adc_mV - BMS_CURRENT_ZERO_MV;
-    float current_mA =
-        delta_mV / (BMS_CURRENT_INA_GAIN * BMS_CURRENT_SHUNT_OHM);
-
-    current_mA = (current_mA * BMS_CURRENT_READING_GAIN) +
-                 BMS_CURRENT_OFFSET_MA;
-
-    if (!g_current_filter_ready) {
-        g_filtered_current_mA = current_mA;
-        g_current_filter_ready = true;
-    } else {
-        g_filtered_current_mA =
-            g_filtered_current_mA +
-            (BMS_CURRENT_SMOOTH_ALPHA *
-             (current_mA - g_filtered_current_mA));
-    }
-
-    const float abs_current_mA = fabsf(g_filtered_current_mA);
-
-    if (g_current_no_load_latched) {
-        if (abs_current_mA > (float)BMS_CURRENT_NOLOAD_ENTER_MA) {
-            g_current_no_load_latched = false;
-        }
-    } else {
-        if (abs_current_mA < (float)BMS_CURRENT_NOLOAD_EXIT_MA) {
-            g_current_no_load_latched = true;
-        }
-    }
-
-    if (g_current_no_load_latched) {
-        return 0L;
-    }
-
-    return BMS_Measurement_LimitCurrentMilliAmps(g_filtered_current_mA);
-}
-
 static bool BMS_Measurement_ConvertTemperatureDeciC(
     uint16_t adc_mV,
     uint8_t temp_index,
+    const bms_cfg_reg_t *cfg,
     int16_t *temperature_dC)
 {
     if (temperature_dC == NULL) {
@@ -195,8 +132,18 @@ static bool BMS_Measurement_ConvertTemperatureDeciC(
     float adc = (float)adc_mV;
 
     if (temp_index < BMS_NUM_TEMPERATURES) {
-        adc = (adc * (float)BMS_NTC_ADC_GAIN_PPM[temp_index]) / 1000000.0f;
-        adc += (float)BMS_NTC_ADC_OFFSET_MV[temp_index];
+        int32_t gain_ppm = BMS_NTC_ADC_GAIN_PPM[temp_index];
+        int16_t offset_mV = BMS_NTC_ADC_OFFSET_MV[temp_index];
+
+        if (cfg != NULL) {
+            if (cfg->ntc_adc_gain_ppm[temp_index] != 0L) {
+                gain_ppm = cfg->ntc_adc_gain_ppm[temp_index];
+            }
+            offset_mV = cfg->ntc_adc_offset_mV[temp_index];
+        }
+
+        adc = (adc * (float)gain_ppm) / 1000000.0f;
+        adc += (float)offset_mV;
     }
 
     if ((adc < (float)BMS_ADC_LOW_VALID_MV) ||
@@ -252,7 +199,7 @@ bms_status_t BMS_Measurement_Init(bms_context_t *ctx)
         return BMS_STATUS_NOT_INITIALIZED;
     }
 
-    return BMS_STATUS_OK;
+    return BMS_CurrentSensor_Init();
 }
 
 bms_status_t BMS_Measurement_UpdateFakeCurrent(bms_context_t *ctx)
@@ -309,18 +256,36 @@ bms_status_t BMS_Measurement_UpdateCurrent(bms_context_t *ctx)
         return BMS_STATUS_NOT_INITIALIZED;
     }
 
-    uint16_t adc_mV = 0U;
-    bms_status_t status = BMS_Measurement_ReadAdc(
-        ctx,
-        BMS_ADC_CHANNEL_CURRENT,
-        &adc_mV);
-    if (status != BMS_STATUS_OK) {
-        return status;
+    bool current_valid = false;
+    int32_t current_mA = 0L;
+
+    if (BMS_CurrentSensor_UsesAdc()) {
+        uint16_t adc_mV = 0U;
+        bms_status_t status = BMS_Measurement_ReadAdc(
+            ctx,
+            BMS_ADC_CHANNEL_CURRENT,
+            &adc_mV);
+        if (status != BMS_STATUS_OK) {
+            return status;
+        }
+
+        status = BMS_CurrentSensor_ConvertAdcMilliVolts(
+            adc_mV,
+            &current_mA,
+            &current_valid);
+        if (status != BMS_STATUS_OK) {
+            return status;
+        }
+    } else {
+        const bms_status_t status =
+            BMS_CurrentSensor_ReadDigitalMilliAmps(
+                &current_mA,
+                &current_valid);
+        if (status != BMS_STATUS_OK) {
+            return status;
+        }
     }
 
-    bool current_valid = false;
-    const int32_t current_mA =
-        BMS_Measurement_ProcessCurrentMilliAmps(adc_mV, &current_valid);
     ctx->regs.meas.current_mA = current_mA;
     ctx->regs.meas.current_abs_mA =
         (current_mA < 0L) ? (uint32_t)(-current_mA) : (uint32_t)current_mA;
@@ -351,7 +316,10 @@ bms_status_t BMS_Measurement_UpdateVoltage(bms_context_t *ctx)
             return status;
         }
 
-        tap_mV[i] = BMS_Measurement_ConvertTapToMilliVolts(adc_mV, i);
+        tap_mV[i] = BMS_Measurement_ConvertTapToMilliVolts(
+            adc_mV,
+            i,
+            &ctx->regs.cfg);
     }
 
     bms_meas_reg_t *meas = &ctx->regs.meas;
@@ -404,6 +372,7 @@ bms_status_t BMS_Measurement_UpdateTemperature(bms_context_t *ctx)
         if (BMS_Measurement_ConvertTemperatureDeciC(
                 adc_mV,
                 i,
+                &ctx->regs.cfg,
                 &temperature_dC)) {
             meas->temperature_valid_bitmap |= (1UL << i);
         }

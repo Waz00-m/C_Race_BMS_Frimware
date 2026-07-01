@@ -3,7 +3,7 @@
 This folder contains the portable Drone BMS firmware library and the ESP32 first
 platform adapter.
 
-Current stage: Stage 9 board configuration profiles.
+Current stage: Stage 14 runtime config editing.
 
 Implemented now:
 
@@ -44,10 +44,28 @@ Implemented now:
 - Diagnostic sleep response through `GET,SLEEP`.
 - Prototype-0 board profile selection through `bms_boards/`.
 - Active board profile: `BMS_BOARD_PROTOTYPE0_PROFILE0`.
-- Placeholder board profile: `BMS_BOARD_PROTOTYPE0_PROFILE1` for the future
-  INA226 current-sensor variant.
+- INA226 board profile: `BMS_BOARD_PROTOTYPE0_PROFILE1`.
 - External generated board profile support through `BMS_BOARD_CONFIG_FILE`.
 - Python board profile configurator: `bms_board_configurator.py`.
+- Configurator drag/drop hardware builder and generated-profile cleanup tools.
+- Current sensor backend abstraction.
+- Analog current backends:
+  - INA240 shunt amplifier
+  - ACS772 Hall sensor
+- I2C HAL interface.
+- ESP32 Wire-backed I2C HAL adapter.
+- Digital INA226 current-sensor backend.
+- NVM HAL interface.
+- ESP32 Preferences-backed NVM adapter.
+- Portable config service with CRC, load, save, and reset behavior.
+- Diagnostic config commands:
+  - `GET,CFG`
+  - `CFG,SET,...`
+  - `CFG,SAVE`
+  - `CFG,LOAD`
+  - `CFG,RESET`
+- Runtime config edits for voltage calibration, NTC ADC calibration, capacity,
+  and fault thresholds with range checks and dirty-state reporting.
 - Thin Arduino `setup()`/`loop()` wrapper.
 - Minimal UART HAL interface.
 - ESP32 UART HAL implementation that prints the boot banner.
@@ -58,8 +76,7 @@ Not implemented yet:
 - Wake-source policy.
 - SoC algorithm.
 - SoH algorithm.
-- INA226 current-sensor backend.
-- Persistent calibration storage.
+- Dashboard/configurator forms for runtime config edits.
 
 Preferred build command when PlatformIO is installed:
 

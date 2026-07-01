@@ -381,7 +381,7 @@ Added:
   - NTC constants
   - ESP32 ADC pins
   - OLED pins/address/display limits
-- Placeholder profile:
+- At Stage 9, placeholder profile:
   - `BMS_BOARD_PROTOTYPE0_PROFILE1`
   - reserved for the future INA226 current-sensor variant
 - Board profile documentation:
@@ -399,8 +399,8 @@ Changed:
 Removed or avoided:
 
 - No behavior change was intended for Prototype-0 Profile0.
-- INA226 support was not implemented yet; Profile1 is guarded as a future
-  profile so it is not accidentally used with the analog INA240 current math.
+- At Stage 9, INA226 support was not implemented yet; Profile1 was guarded so
+  it was not accidentally used with the analog INA240 current math.
 
 ### Stage 10 - Board Profile Configurator
 
@@ -413,7 +413,7 @@ Added:
   - voltage divider ratios
   - tap/ADC ratio calculation
   - analog INA240 current constants
-  - INA226 placeholder values
+  - INA226 profile values
   - NTC constants
   - ESP32 ADC pins
   - OLED pins and display constants
@@ -441,5 +441,187 @@ Removed or avoided:
 
 - The configurator does not edit `bms_core/`, `bms_hal/`, or platform source
   files.
-- The generated INA226 profile remains a safe placeholder until the firmware
-  current-sensor backend exists.
+- At Stage 10, the generated INA226 profile remained guarded until the firmware
+  current-sensor backend existed.
+
+### Stage 11 - Current Sensor Backend Abstraction
+
+Added:
+
+- `bms_current_sensor.h/.cpp`.
+- Current sensor backend dispatch based on `BMS_CURRENT_SENSOR_TYPE`.
+- Supported analog current backends:
+  - `BMS_CURRENT_SENSOR_ANALOG_INA240`
+  - `BMS_CURRENT_SENSOR_ANALOG_ACS772`
+- ACS772 Hall current configuration:
+  - `BMS_CURRENT_HALL_SENSITIVITY_MV_PER_A`
+  - `BMS_CURRENT_SENSOR_POLARITY`
+- Configurator option:
+  - `analog_acs772`
+- `docs/sensor_backends.md`.
+
+Changed:
+
+- `BMS_Measurement_UpdateCurrent()` now owns ADC acquisition only, then calls
+  the current-sensor backend to convert ADC millivolts into milliamps.
+- INA240 math moved out of `bms_measurement.cpp`.
+- Shared analog-current filtering, no-load hysteresis, gain correction, and
+  validity handling now live inside the current-sensor backend.
+- `bms_boards/bms_board_config.h` now defines the ACS772 current sensor type.
+
+Removed or avoided:
+
+- No Arduino, ESP32, or platform APIs were added to the current-sensor backend.
+- At Stage 11, INA226 was still guarded until the I2C backend could be added.
+
+### Stage 12 - INA226 I2C Current Backend
+
+Added:
+
+- `bms_i2c_hal.h`.
+- ESP32 Wire-backed I2C HAL adapter.
+- INA226 current backend inside `bms_current_sensor.cpp`.
+- INA226 calibration-register calculation from shunt resistance and expected
+  current range.
+- Digital current read path using the INA226 signed current register.
+- Profile1 build environment:
+  - `esp32dev_profile1`
+- Configurator support for real `ina226` profiles.
+- I2C pin and bus-speed configuration values in board profiles.
+
+Changed:
+
+- `BMS_BOARD_PROTOTYPE0_PROFILE1` now builds as the INA226 current-sensor
+  variant instead of being a placeholder.
+- `BMS_Measurement_UpdateCurrent()` now chooses analog ADC current acquisition
+  or digital INA226 current acquisition through the current-sensor backend.
+- Fault supervisor no longer expects the current ADC acquisition bit when the
+  selected current backend is INA226.
+- Missing INA226 hardware reports invalid current instead of stopping the whole
+  firmware during initialization.
+
+Removed or avoided:
+
+- No INA226 or I2C platform calls were added to app logic or measurement math.
+- No BMS core code includes Arduino, Wire, or ESP32 driver headers.
+- No SoC, SoH, balancing, or production protection behavior was added.
+
+### Stage 12.5 - Drag/Drop Configurator Workflow And Profile Cleanup
+
+Added:
+
+- Drag/drop hardware palette in `bms_board_configurator.py`.
+- Visual board canvas with slots for:
+  - MCU
+  - voltage sense
+  - current sense
+  - temperature
+  - display
+- Selectable dropped blocks with `Configure Selected` navigation to the matching
+  detail tab.
+- Voltage divider sensing represented as an explicit voltage block:
+  - `6S Divider Taps`
+- Planning placeholder blocks:
+  - `NXP S32K`
+  - `STM32H Series`
+  - `STM32F Series`
+  - `TI MCU`
+  - `LTC6811`
+  - `BQ76952`
+  - `PTC Sensor`
+- Prototype-0 defaults button for quickly restoring the baseline board.
+- Generated profile manifest:
+  - `bms_profile_manifest.json`
+- Generated profile manager panel.
+- GUI actions for:
+  - refreshing generated profiles
+  - deleting selected generated profile files
+  - removing selected PlatformIO build cache directories
+- Documentation for cleaning built-in and generated PlatformIO environments.
+
+Changed:
+
+- Generated profiles now carry metadata such as profile folder, PlatformIO env,
+  board name, dropped board components, selected blocks, and current sensor.
+- The old drop-down block selector was replaced with an in-app drag/drop
+  builder workflow without changing the firmware core or HAL contracts.
+- Placeholder blocks can be dragged onto the board canvas, but generation is
+  blocked until matching platform/sensor backends exist.
+
+Removed or avoided:
+
+- The cleanup actions only target `bms_boards/generated/` or `.pio/build/`.
+- No generated-profile cleanup code edits core, HAL, platform, or app source.
+
+### Stage 13 - Config/NVM Foundation
+
+Added:
+
+- `bms_nvm_hal.h`.
+- ESP32 Preferences-backed NVM adapter:
+  - `esp32_nvm_hal.cpp`
+- Portable config service:
+  - `bms_config.h/.cpp`
+- Persistent config record with:
+  - magic
+  - record version
+  - config version
+  - config size
+  - `CFG_REG` payload
+  - CRC
+- CRC calculation for `CFG_REG`.
+- Diagnostic commands:
+  - `GET,CFG`
+  - `CFG,SAVE`
+  - `CFG,LOAD`
+  - `CFG,RESET`
+- `docs/config_nvm.md`.
+
+Changed:
+
+- `CFG_REG` now owns voltage divider ratio, voltage gain/offset, and NTC ADC
+  calibration arrays.
+- Measurement conversion now reads voltage and NTC calibration from `CFG_REG`
+  instead of only reading compile-time board-profile constants.
+- Context config defaults are reusable so diagnostics can restore board-profile
+  defaults without resetting the whole runtime context.
+- App initialization attempts to load persisted config after context init and
+  before first measurement.
+
+Removed or avoided:
+
+- No NVM or Preferences calls were added to `bms_core/`.
+- No scheduler task writes flash.
+- No automatic recurring config save was added.
+- No production config authorization or lock/unlock policy was added yet.
+
+### Stage 14 - Runtime Config Editing
+
+Added:
+
+- Diagnostic command family:
+  - `CFG,SET,VOLT_RATIO,<index>,<ppm>`
+  - `CFG,SET,VOLT_GAIN,<index>,<ppm>`
+  - `CFG,SET,VOLT_OFFSET,<index>,<mV>`
+  - `CFG,SET,NTC_GAIN,<index>,<ppm>`
+  - `CFG,SET,NTC_OFFSET,<index>,<mV>`
+  - `CFG,SET,CAPACITY,<mAh>`
+  - `CFG,SET,THRESHOLD,<name>,<value>`
+- One-based diagnostic indexes for cell/tap and temperature channels.
+- Range checks inside the portable config service before edits enter `CFG_REG`.
+- `CFG_REG.config_dirty` to show unsaved runtime config changes.
+- Expanded `GET,CFG` output for voltage gain/offset, NTC calibration, capacity,
+  thresholds, CRC, and dirty state.
+
+Changed:
+
+- `BMS_CONFIG_VERSION` moved to version 2 because the persisted config struct
+  now includes dirty-state metadata.
+- `CFG,SAVE` clears the dirty flag before writing to NVM.
+- `CFG,LOAD` restores a saved config and reports it as clean.
+
+Removed or avoided:
+
+- No scheduler task writes flash.
+- No measurement or fault code writes config directly.
+- Runtime current-sensor calibration edits are still reserved for a later pass.
