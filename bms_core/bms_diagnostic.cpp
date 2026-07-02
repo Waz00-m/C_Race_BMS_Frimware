@@ -104,7 +104,7 @@ static const char *BMS_Diagnostic_PayloadAfterBmsPrefix(const char *command)
 static void BMS_Diagnostic_SendHelp(void)
 {
     BMS_Diagnostic_SendLine(
-        "RESP,HELP,CMDS=HELP|GET,SNAPSHOT|GET,VOLT|GET,CURRENT|GET,TEMP|GET,FAULT|GET,SLEEP|GET,TAPS|GET,CFG|CFG,SET,...|CFG,SAVE|CFG,LOAD|CFG,RESET");
+        "RESP,HELP,CMDS=HELP|GET,SNAPSHOT|GET,VOLT|GET,CURRENT|GET,TEMP|GET,FAULT|GET,SLEEP|GET,TAPS|GET,CFG|GET,INJECT|CFG,SET,...|CFG,SAVE|CFG,LOAD|CFG,RESET|DIAG,ADC,...");
 }
 
 static void BMS_Diagnostic_SendSnapshot(const bms_register_snapshot_t *snapshot)
@@ -129,13 +129,13 @@ static void BMS_Diagnostic_SendSnapshot(const bms_register_snapshot_t *snapshot)
 
 static void BMS_Diagnostic_SendVoltage(const bms_register_snapshot_t *snapshot)
 {
-    char line[192];
+    char line[256];
     const bms_meas_reg_t *meas = &snapshot->regs.meas;
 
     (void)snprintf(
         line,
         sizeof(line),
-        "RESP,VOLT,PACK_MV=%lu,CELL_MV=[%u,%u,%u,%u,%u,%u],MIN=%u,MAX=%u,DELTA_MV=%u",
+        "RESP,VOLT,PACK_MV=%lu,CELL_MV=[%u,%u,%u,%u,%u,%u],MIN=%u,MAX=%u,DELTA_MV=%u,VALID=0x%08lX,TAP_VALID=0x%08lX,REASON=0x%08lX",
         (unsigned long)meas->pack_mV,
         (unsigned)meas->cell_mV[0],
         (unsigned)meas->cell_mV[1],
@@ -145,7 +145,10 @@ static void BMS_Diagnostic_SendVoltage(const bms_register_snapshot_t *snapshot)
         (unsigned)meas->cell_mV[5],
         (unsigned)meas->min_cell_index,
         (unsigned)meas->max_cell_index,
-        (unsigned)meas->cell_delta_mV);
+        (unsigned)meas->cell_delta_mV,
+        (unsigned long)meas->cell_valid_bitmap,
+        (unsigned long)meas->tap_valid_bitmap,
+        (unsigned long)meas->voltage_invalid_reason_bitmap);
     BMS_Diagnostic_SendLine(line);
 }
 
@@ -157,11 +160,12 @@ static void BMS_Diagnostic_SendCurrent(const bms_register_snapshot_t *snapshot)
     (void)snprintf(
         line,
         sizeof(line),
-        "RESP,CURRENT,CURRENT_MA=%ld,CURRENT_ABS_MA=%lu,ADC_MV=%u,VALID=%u",
+        "RESP,CURRENT,CURRENT_MA=%ld,CURRENT_ABS_MA=%lu,ADC_MV=%u,VALID=%u,REASON=0x%08lX",
         (long)meas->current_mA,
         (unsigned long)meas->current_abs_mA,
         (unsigned)snapshot->regs.acq.adc_mV[BMS_ADC_CHANNEL_CURRENT],
-        (unsigned)meas->current_valid);
+        (unsigned)meas->current_valid,
+        (unsigned long)meas->current_invalid_reason_bitmap);
     BMS_Diagnostic_SendLine(line);
 }
 
@@ -182,7 +186,7 @@ static void BMS_Diagnostic_SendTemp(const bms_register_snapshot_t *snapshot)
     (void)snprintf(
         line,
         sizeof(line),
-        "RESP,TEMP,TEMP_DC=[%s,%s,%s,%s],ADC_MV=[%u,%u,%u,%u],VALID=0x%08lX",
+        "RESP,TEMP,TEMP_DC=[%s,%s,%s,%s],ADC_MV=[%u,%u,%u,%u],VALID=0x%08lX,REASON=0x%08lX",
         temp0,
         temp1,
         temp2,
@@ -191,25 +195,177 @@ static void BMS_Diagnostic_SendTemp(const bms_register_snapshot_t *snapshot)
         (unsigned)snapshot->regs.acq.adc_mV[BMS_ADC_CHANNEL_TEMP_2],
         (unsigned)snapshot->regs.acq.adc_mV[BMS_ADC_CHANNEL_TEMP_3],
         (unsigned)snapshot->regs.acq.adc_mV[BMS_ADC_CHANNEL_TEMP_4],
-        (unsigned long)meas->temperature_valid_bitmap);
+        (unsigned long)meas->temperature_valid_bitmap,
+        (unsigned long)meas->temperature_invalid_reason_bitmap);
     BMS_Diagnostic_SendLine(line);
+}
+
+static void BMS_Diagnostic_AppendFaultCode(
+    char *codes,
+    size_t codes_size,
+    bool *first,
+    bms_fault_code_t code)
+{
+    if ((codes == NULL) || (codes_size == 0U) || (first == NULL) ||
+        (code == BMS_FAULT_CODE_NONE)) {
+        return;
+    }
+
+    const size_t used = strlen(codes);
+    if (used >= (codes_size - 1U)) {
+        return;
+    }
+
+    const int written = snprintf(
+        &codes[used],
+        codes_size - used,
+        "%s0x%04X",
+        *first ? "" : ",",
+        (unsigned)code);
+    if (written > 0) {
+        *first = false;
+    }
+}
+
+static void BMS_Diagnostic_FormatFaultCodes(
+    const bms_register_snapshot_t *snapshot,
+    char *codes,
+    size_t codes_size)
+{
+    if ((codes == NULL) || (codes_size == 0U)) {
+        return;
+    }
+
+    const bms_register_map_t *regs = &snapshot->regs;
+    const bms_fault_reg_t *fault = &regs->fault;
+    const bms_meas_reg_t *meas = &regs->meas;
+    bool first = true;
+
+    codes[0] = '\0';
+
+    if ((fault->active_fault_bitmap & BMS_FAULT_CELL_OVERVOLTAGE) != 0UL) {
+        BMS_Diagnostic_AppendFaultCode(
+            codes,
+            codes_size,
+            &first,
+            BMS_FAULT_CODE_CELL_OVERVOLTAGE);
+    }
+
+    if ((fault->active_fault_bitmap & BMS_FAULT_CELL_UNDERVOLTAGE) != 0UL) {
+        BMS_Diagnostic_AppendFaultCode(
+            codes,
+            codes_size,
+            &first,
+            BMS_FAULT_CODE_CELL_UNDERVOLTAGE);
+    }
+
+    if ((fault->active_fault_bitmap & BMS_FAULT_PACK_OVERVOLTAGE) != 0UL) {
+        BMS_Diagnostic_AppendFaultCode(
+            codes,
+            codes_size,
+            &first,
+            BMS_FAULT_CODE_PACK_OVERVOLTAGE);
+    }
+
+    if ((fault->active_fault_bitmap & BMS_FAULT_PACK_UNDERVOLTAGE) != 0UL) {
+        BMS_Diagnostic_AppendFaultCode(
+            codes,
+            codes_size,
+            &first,
+            BMS_FAULT_CODE_PACK_UNDERVOLTAGE);
+    }
+
+    if ((fault->active_fault_bitmap & BMS_FAULT_OVERCURRENT) != 0UL) {
+        BMS_Diagnostic_AppendFaultCode(
+            codes,
+            codes_size,
+            &first,
+            BMS_FAULT_CODE_DISCHARGE_OVERCURRENT);
+    }
+
+    if ((fault->active_fault_bitmap & BMS_FAULT_TEMPERATURE_HIGH) != 0UL) {
+        BMS_Diagnostic_AppendFaultCode(
+            codes,
+            codes_size,
+            &first,
+            BMS_FAULT_CODE_CELL_TEMPERATURE_HIGH);
+    }
+
+    if ((fault->active_fault_bitmap & BMS_FAULT_SENSOR_INVALID) != 0UL) {
+        const uint32_t all_temps = (1UL << BMS_NUM_TEMPERATURES) - 1UL;
+        const uint32_t all_cells = (1UL << BMS_NUM_CELLS) - 1UL;
+
+        if (!meas->current_valid) {
+            BMS_Diagnostic_AppendFaultCode(
+                codes,
+                codes_size,
+                &first,
+                BMS_FAULT_CODE_CURRENT_SENSOR_FAULT);
+        }
+
+        if ((meas->temperature_valid_bitmap & all_temps) != all_temps) {
+            BMS_Diagnostic_AppendFaultCode(
+                codes,
+                codes_size,
+                &first,
+                BMS_FAULT_CODE_TEMPERATURE_SENSOR_FAULT);
+        }
+
+        if (fault->primary_fault_code == BMS_FAULT_CODE_ADC_READ_FAILURE) {
+            BMS_Diagnostic_AppendFaultCode(
+                codes,
+                codes_size,
+                &first,
+                BMS_FAULT_CODE_ADC_READ_FAILURE);
+        }
+
+        if ((fault->primary_fault_code == BMS_FAULT_CODE_MEASUREMENT_INVALID) ||
+            ((meas->tap_valid_bitmap & all_cells) != all_cells) ||
+            ((meas->cell_valid_bitmap & all_cells) != all_cells) ||
+            (meas->voltage_invalid_reason_bitmap != 0UL) ||
+            (regs->acq.stuck_bitmap != 0UL)) {
+            BMS_Diagnostic_AppendFaultCode(
+                codes,
+                codes_size,
+                &first,
+                BMS_FAULT_CODE_MEASUREMENT_INVALID);
+        }
+    }
+
+    if ((codes[0] == '\0') &&
+        (fault->primary_fault_code != BMS_FAULT_CODE_NONE)) {
+        BMS_Diagnostic_AppendFaultCode(
+            codes,
+            codes_size,
+            &first,
+            (bms_fault_code_t)fault->primary_fault_code);
+    }
 }
 
 static void BMS_Diagnostic_SendFault(const bms_register_snapshot_t *snapshot)
 {
-    char line[192];
+    char line[384];
+    char codes[112];
     const bms_fault_reg_t *fault = &snapshot->regs.fault;
+    const bms_meas_reg_t *meas = &snapshot->regs.meas;
+
+    BMS_Diagnostic_FormatFaultCodes(snapshot, codes, sizeof(codes));
 
     (void)snprintf(
         line,
         sizeof(line),
-        "RESP,FAULT,WARN=0x%08lX,ACTIVE=0x%08lX,LATCHED=0x%08lX,PRIMARY=0x%04X,SEVERITY=%s,EVENTS=%lu",
+        "RESP,FAULT,WARN=0x%08lX,ACTIVE=0x%08lX,LATCHED=0x%08lX,PRIMARY=0x%04X,CODES=[%s],SEVERITY=%s,EVENTS=%lu,CELL_VALID=0x%08lX,TAP_VALID=0x%08lX,CURRENT_VALID=%u,TEMP_VALID=0x%08lX",
         (unsigned long)fault->warning_bitmap,
         (unsigned long)fault->active_fault_bitmap,
         (unsigned long)fault->latched_fault_bitmap,
         (unsigned)fault->primary_fault_code,
+        codes,
         BMS_FaultSeverity_ToString(fault->fault_severity),
-        (unsigned long)fault->event_counter);
+        (unsigned long)fault->event_counter,
+        (unsigned long)meas->cell_valid_bitmap,
+        (unsigned long)meas->tap_valid_bitmap,
+        (unsigned)meas->current_valid,
+        (unsigned long)meas->temperature_valid_bitmap);
     BMS_Diagnostic_SendLine(line);
 }
 
@@ -234,13 +390,13 @@ static void BMS_Diagnostic_SendSleep(const bms_register_snapshot_t *snapshot)
 
 static void BMS_Diagnostic_SendTaps(const bms_register_snapshot_t *snapshot)
 {
-    char line[256];
+    char line[320];
     const bms_register_map_t *regs = &snapshot->regs;
 
     (void)snprintf(
         line,
         sizeof(line),
-        "RESP,TAPS,ADC_MV=[%u,%u,%u,%u,%u,%u],TAP_MV=[%lu,%lu,%lu,%lu,%lu,%lu],CELL_MV=[%u,%u,%u,%u,%u,%u]",
+        "RESP,TAPS,ADC_MV=[%u,%u,%u,%u,%u,%u],TAP_MV=[%lu,%lu,%lu,%lu,%lu,%lu],CELL_MV=[%u,%u,%u,%u,%u,%u],TAP_VALID=0x%08lX,CELL_VALID=0x%08lX,REASON=0x%08lX",
         (unsigned)regs->acq.adc_mV[BMS_ADC_CHANNEL_CELL_1],
         (unsigned)regs->acq.adc_mV[BMS_ADC_CHANNEL_CELL_2],
         (unsigned)regs->acq.adc_mV[BMS_ADC_CHANNEL_CELL_3],
@@ -258,7 +414,36 @@ static void BMS_Diagnostic_SendTaps(const bms_register_snapshot_t *snapshot)
         (unsigned)regs->meas.cell_mV[2],
         (unsigned)regs->meas.cell_mV[3],
         (unsigned)regs->meas.cell_mV[4],
-        (unsigned)regs->meas.cell_mV[5]);
+        (unsigned)regs->meas.cell_mV[5],
+        (unsigned long)regs->meas.tap_valid_bitmap,
+        (unsigned long)regs->meas.cell_valid_bitmap,
+        (unsigned long)regs->meas.voltage_invalid_reason_bitmap);
+    BMS_Diagnostic_SendLine(line);
+}
+
+static void BMS_Diagnostic_SendInjectionState(
+    const bms_register_map_t *regs)
+{
+    char line[256];
+    const bms_diag_reg_t *diag = &regs->diag;
+
+    (void)snprintf(
+        line,
+        sizeof(line),
+        "RESP,INJECT,ENABLED=%u,MASK=0x%08lX,ADC_MV=[%u,%u,%u,%u,%u,%u,%u,%u,%u,%u,%u]",
+        (unsigned)diag->adc_injection_enabled,
+        (unsigned long)diag->adc_injection_bitmap,
+        (unsigned)diag->adc_injection_mV[BMS_ADC_CHANNEL_CELL_1],
+        (unsigned)diag->adc_injection_mV[BMS_ADC_CHANNEL_CELL_2],
+        (unsigned)diag->adc_injection_mV[BMS_ADC_CHANNEL_CELL_3],
+        (unsigned)diag->adc_injection_mV[BMS_ADC_CHANNEL_CELL_4],
+        (unsigned)diag->adc_injection_mV[BMS_ADC_CHANNEL_CELL_5],
+        (unsigned)diag->adc_injection_mV[BMS_ADC_CHANNEL_CELL_6],
+        (unsigned)diag->adc_injection_mV[BMS_ADC_CHANNEL_CURRENT],
+        (unsigned)diag->adc_injection_mV[BMS_ADC_CHANNEL_TEMP_1],
+        (unsigned)diag->adc_injection_mV[BMS_ADC_CHANNEL_TEMP_2],
+        (unsigned)diag->adc_injection_mV[BMS_ADC_CHANNEL_TEMP_3],
+        (unsigned)diag->adc_injection_mV[BMS_ADC_CHANNEL_TEMP_4]);
     BMS_Diagnostic_SendLine(line);
 }
 
@@ -409,6 +594,184 @@ static bool BMS_Diagnostic_ParseUint32(const char *text, uint32_t *value)
 
     *value = (uint32_t)parsed;
     return true;
+}
+
+static uint8_t BMS_Diagnostic_SplitTokens(
+    char *text,
+    char *tokens[],
+    uint8_t max_tokens);
+
+static bool BMS_Diagnostic_ChannelFromTokens(
+    char *tokens[],
+    uint8_t count,
+    uint8_t start_index,
+    bms_adc_channel_t *channel,
+    uint8_t *tokens_used)
+{
+    if ((tokens == NULL) || (channel == NULL) || (tokens_used == NULL) ||
+        (start_index >= count)) {
+        return false;
+    }
+
+    const char *kind = tokens[start_index];
+    uint32_t index = 0UL;
+
+    if (strcmp(kind, "CURRENT") == 0) {
+        *channel = BMS_ADC_CHANNEL_CURRENT;
+        *tokens_used = 1U;
+        return true;
+    }
+
+    if ((strcmp(kind, "CELL") == 0) || (strcmp(kind, "TAP") == 0)) {
+        if ((uint8_t)(start_index + 1U) >= count) {
+            return false;
+        }
+        if (!BMS_Diagnostic_ParseUint32(tokens[start_index + 1U], &index) ||
+            (index == 0UL) ||
+            (index > BMS_NUM_CELLS)) {
+            return false;
+        }
+        *channel =
+            (bms_adc_channel_t)((uint8_t)BMS_ADC_CHANNEL_CELL_1 +
+                                (uint8_t)(index - 1UL));
+        *tokens_used = 2U;
+        return true;
+    }
+
+    if (strcmp(kind, "TEMP") == 0) {
+        if ((uint8_t)(start_index + 1U) >= count) {
+            return false;
+        }
+        if (!BMS_Diagnostic_ParseUint32(tokens[start_index + 1U], &index) ||
+            (index == 0UL) ||
+            (index > BMS_NUM_TEMPERATURES)) {
+            return false;
+        }
+        *channel =
+            (bms_adc_channel_t)((uint8_t)BMS_ADC_CHANNEL_TEMP_1 +
+                                (uint8_t)(index - 1UL));
+        *tokens_used = 2U;
+        return true;
+    }
+
+    return false;
+}
+
+static void BMS_Diagnostic_SendAdcInjectStatus(
+    const char *status,
+    const bms_context_t *ctx,
+    bms_adc_channel_t channel)
+{
+    char line[160];
+    const bms_diag_reg_t *diag = &ctx->regs.diag;
+    const uint8_t index = (uint8_t)channel;
+
+    (void)snprintf(
+        line,
+        sizeof(line),
+        "RESP,DIAG,ADC,STATUS=%s,ENABLED=%u,MASK=0x%08lX,CHANNEL=%u,ADC_MV=%u",
+        status,
+        (unsigned)diag->adc_injection_enabled,
+        (unsigned long)diag->adc_injection_bitmap,
+        (unsigned)index,
+        (unsigned)((index < BMS_ACQ_CHANNEL_COUNT) ?
+            diag->adc_injection_mV[index] :
+            0U));
+    BMS_Diagnostic_SendLine(line);
+}
+
+static void BMS_Diagnostic_UpdateInjectionSystemMode(bms_context_t *ctx)
+{
+    if (ctx->regs.diag.adc_injection_enabled) {
+        ctx->regs.sys.system_mode = BMS_SYSTEM_MODE_DIAGNOSTIC_MODE;
+    } else if (ctx->regs.fault.active_fault_bitmap != 0UL) {
+        ctx->regs.sys.system_mode = BMS_SYSTEM_MODE_FAULT_ACTIVE;
+    } else {
+        ctx->regs.sys.system_mode = BMS_SYSTEM_MODE_ACTIVE_MONITORING;
+    }
+}
+
+static void BMS_Diagnostic_ExecuteAdcInjection(
+    bms_context_t *ctx,
+    char *payload)
+{
+    char *tokens[7] = {0};
+    const uint8_t count = BMS_Diagnostic_SplitTokens(payload, tokens, 7U);
+
+    if ((count >= 3U) && (strcmp(tokens[2], "ON") == 0)) {
+        ctx->regs.diag.adc_injection_enabled = true;
+        BMS_Diagnostic_UpdateInjectionSystemMode(ctx);
+        BMS_Diagnostic_SendAdcInjectStatus(
+            "OK",
+            ctx,
+            BMS_ADC_CHANNEL_COUNT);
+        return;
+    }
+
+    if ((count >= 3U) && (strcmp(tokens[2], "OFF") == 0)) {
+        ctx->regs.diag.adc_injection_enabled = false;
+        BMS_Diagnostic_UpdateInjectionSystemMode(ctx);
+        BMS_Diagnostic_SendAdcInjectStatus(
+            "OK",
+            ctx,
+            BMS_ADC_CHANNEL_COUNT);
+        return;
+    }
+
+    if ((count >= 4U) && (strcmp(tokens[2], "CLEAR") == 0) &&
+        (strcmp(tokens[3], "ALL") == 0)) {
+        ctx->regs.diag.adc_injection_bitmap = 0UL;
+        memset(
+            ctx->regs.diag.adc_injection_mV,
+            0,
+            sizeof(ctx->regs.diag.adc_injection_mV));
+        BMS_Diagnostic_SendAdcInjectStatus(
+            "OK",
+            ctx,
+            BMS_ADC_CHANNEL_COUNT);
+        return;
+    }
+
+    if ((count >= 4U) && (strcmp(tokens[2], "CLEAR") == 0)) {
+        bms_adc_channel_t channel = BMS_ADC_CHANNEL_COUNT;
+        uint8_t tokens_used = 0U;
+        if (BMS_Diagnostic_ChannelFromTokens(
+                tokens,
+                count,
+                3U,
+                &channel,
+                &tokens_used)) {
+            (void)tokens_used;
+            ctx->regs.diag.adc_injection_bitmap &=
+                ~(1UL << (uint8_t)channel);
+            BMS_Diagnostic_SendAdcInjectStatus("OK", ctx, channel);
+            return;
+        }
+    }
+
+    if ((count >= 5U) && (strcmp(tokens[2], "SET") == 0)) {
+        bms_adc_channel_t channel = BMS_ADC_CHANNEL_COUNT;
+        uint8_t tokens_used = 0U;
+        uint32_t adc_mV = 0UL;
+        if (BMS_Diagnostic_ChannelFromTokens(
+                tokens,
+                count,
+                3U,
+                &channel,
+                &tokens_used) &&
+            ((uint8_t)(3U + tokens_used) < count) &&
+            BMS_Diagnostic_ParseUint32(tokens[3U + tokens_used], &adc_mV) &&
+            (adc_mV <= 3300UL)) {
+            ctx->regs.diag.adc_injection_mV[(uint8_t)channel] =
+                (uint16_t)adc_mV;
+            ctx->regs.diag.adc_injection_bitmap |= (1UL << (uint8_t)channel);
+            BMS_Diagnostic_SendAdcInjectStatus("OK", ctx, channel);
+            return;
+        }
+    }
+
+    ctx->regs.diag.response_code = BMS_DIAG_RESPONSE_INVALID_COMMAND;
+    BMS_Diagnostic_SendLine("RESP,DIAG,ADC,STATUS=INVALID_ARGUMENT");
 }
 
 static uint8_t BMS_Diagnostic_SplitTokens(
@@ -652,6 +1015,10 @@ static bms_diag_command_id_t BMS_Diagnostic_Classify(const char *payload)
         return BMS_DIAG_COMMAND_GET_CFG;
     }
 
+    if (strcmp(payload, "GET INJECT") == 0) {
+        return BMS_DIAG_COMMAND_GET_INJECT;
+    }
+
     if ((strncmp(payload, "CFG SET", 7U) == 0) &&
         ((payload[7U] == '\0') || (payload[7U] == ' '))) {
         return BMS_DIAG_COMMAND_CFG_SET;
@@ -667,6 +1034,11 @@ static bms_diag_command_id_t BMS_Diagnostic_Classify(const char *payload)
 
     if (strcmp(payload, "CFG RESET") == 0) {
         return BMS_DIAG_COMMAND_CFG_RESET;
+    }
+
+    if ((strncmp(payload, "DIAG ADC", 8U) == 0) &&
+        ((payload[8U] == '\0') || (payload[8U] == ' '))) {
+        return BMS_DIAG_COMMAND_ADC_INJECT;
     }
 
     return BMS_DIAG_COMMAND_NONE;
@@ -703,6 +1075,12 @@ static void BMS_Diagnostic_ExecuteCommand(
 
     if (command_id == BMS_DIAG_COMMAND_CFG_SET) {
         BMS_Diagnostic_ExecuteConfigSet(ctx, (char *)payload);
+        ctx->regs.diag.diagnostic_active = false;
+        return;
+    }
+
+    if (command_id == BMS_DIAG_COMMAND_ADC_INJECT) {
+        BMS_Diagnostic_ExecuteAdcInjection(ctx, (char *)payload);
         ctx->regs.diag.diagnostic_active = false;
         return;
     }
@@ -765,6 +1143,9 @@ static void BMS_Diagnostic_ExecuteCommand(
     case BMS_DIAG_COMMAND_GET_CFG:
         BMS_Diagnostic_SendConfig(&snapshot);
         break;
+    case BMS_DIAG_COMMAND_GET_INJECT:
+        BMS_Diagnostic_SendInjectionState(&snapshot.regs);
+        break;
     default:
         break;
     }
@@ -782,6 +1163,12 @@ bms_status_t BMS_Diagnostic_Init(bms_diagnostic_t *diag, bms_context_t *ctx)
     memset(diag, 0, sizeof(*diag));
     diag->initialized = true;
     ctx->regs.diag.response_code = BMS_DIAG_RESPONSE_OK;
+    ctx->regs.diag.adc_injection_enabled = false;
+    ctx->regs.diag.adc_injection_bitmap = 0UL;
+    memset(
+        ctx->regs.diag.adc_injection_mV,
+        0,
+        sizeof(ctx->regs.diag.adc_injection_mV));
 
     return BMS_STATUS_OK;
 }

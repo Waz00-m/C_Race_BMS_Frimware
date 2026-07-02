@@ -1,0 +1,25 @@
+{
+  "schema": 1,
+  "generated_at": "2026-07-01T12:41:22",
+  "profile_folder": "my_6s_esp32_profile0",
+  "profile_include": "generated/my_6s_esp32_profile0/bms_board_profile.h",
+  "board_name": "MY_6S_ESP32_PROFILE0",
+  "env_name": "my_6s_esp32",
+  "platformio_board": "esp32dev",
+  "upload_port": "COM3",
+  "blocks": {
+    "mcu": "ESP32 DevKit / Arduino",
+    "voltage": "6S cumulative divider taps",
+    "current": "INA240 analog shunt",
+    "temperature": "10k NTC beta thermistors",
+    "display": "SSD1306 OLED 128x64"
+  },
+  "board_components": {
+    "mcu": "mcu_esp32",
+    "voltage": "voltage_divider_6s",
+    "current": "current_ina240",
+    "temperature": "temp_ntc_10k",
+    "display": "display_ssd1306"
+  },
+  "current_sensor": "analog_ina240"
+}

@@ -1,6 +1,6 @@
 # Stage 14 And Stage 15 Plan
 
-This note is a handoff for continuing after Stage 14.
+This note is a handoff for continuing after Stage 15.
 
 ## Current Position
 
@@ -13,6 +13,7 @@ Completed foundation:
 - Stage 12.5: drag/drop configurator workflow and placeholder hardware blocks.
 - Stage 13: config/NVM foundation with explicit diagnostic save/load/reset.
 - Stage 14: runtime config editing through diagnostic `CFG,SET,...` commands.
+- Stage 15: first measurement validation and fault truth layer.
 
 Stage 13 added:
 
@@ -133,6 +134,9 @@ Runtime:
 
 ## Stage 15 - Measurement Validation And Fault Truth Layer
 
+Status: implemented as the first validation layer. Hardware confirmation and
+threshold tuning are still required.
+
 Goal:
 
 Stop treating every converted measurement as trustworthy. Add validation before
@@ -147,7 +151,7 @@ state or protection decisions.
 This is especially important because Prototype-0 has already shown noisy or
 wrong cell values during calibration.
 
-### Target Features
+### Implemented Features
 
 - Add measurement validation service in portable core.
 - Validate voltage taps:
@@ -159,25 +163,26 @@ wrong cell values during calibration.
 - Validate current:
   - current sensor valid flag
   - plausible current range
-  - optional stuck/noisy sensor detection
+  - ADC range/stuck checks for analog current profiles
 - Validate temperature:
   - open/short NTC/PTC detection
   - plausible temperature range
   - missing/stuck channel detection
-- Add per-channel validation bitmaps if needed.
+- Add tap/cell validation bitmaps.
+- Add invalid-reason bitmaps.
 - Ensure fault supervisor uses validated values, not raw conversions.
-- Add clearer fault codes/status for validation failures.
+- Add fault code `0x4002` for measurement invalid.
 
-### Suggested Files
+### Files
 
-Possible new files:
+New files:
 
 ```text
 bms_core/bms_measurement_validation.h
 bms_core/bms_measurement_validation.cpp
 ```
 
-Possible register additions:
+Register additions:
 
 ```text
 MEAS_REG.cell_valid_bitmap
@@ -188,7 +193,8 @@ ACQ_REG.stuck_bitmap
 ACQ_REG.timeout_bitmap
 ```
 
-Do not add all of these blindly. Add only what Stage 15 needs.
+`ACQ_REG.timeout_bitmap` remains future work. Do not add all fields blindly.
+Add only what the validation logic requires.
 
 ### Expected Output
 
@@ -235,7 +241,11 @@ Expected result: no platform calls in `bms_core`.
 
 Good candidates after Stage 15:
 
-- Stage 16: tester MCU firmware foundation.
+- Stage 16: tester foundation. Started as a PC UART tester in
+  `tester_firmware/pc_uart_tester/`; MicroPython embedded scaffold remains in
+  `tester_firmware/micropython_uart_tester/` for later porting. PC GUI now
+  supports firmware-side ADC injection through `GET,INJECT` and
+  `DIAG,ADC,...`.
 - Stage 17: dashboard/configurator calibration UI.
 - Stage 18: SoC coulomb-counting structure.
 - Stage 19: AFE backend scaffold for LTC6811/BQ76952.

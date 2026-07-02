@@ -3,7 +3,7 @@
 This folder contains the portable Drone BMS firmware library and the ESP32 first
 platform adapter.
 
-Current stage: Stage 14 runtime config editing.
+Current stage: Stage 16 tester firmware foundation.
 
 Implemented now:
 
@@ -66,6 +66,20 @@ Implemented now:
   - `CFG,RESET`
 - Runtime config edits for voltage calibration, NTC ADC calibration, capacity,
   and fault thresholds with range checks and dirty-state reporting.
+- Measurement validation service for tap, cell, current, and temperature
+  validity.
+- Validation bitmaps and invalid-reason bitmaps in the runtime register map.
+- Fault supervisor gating so voltage faults do not trust invalid tap/cell data.
+- Diagnostic and dashboard visibility for validation state.
+- PC UART tester in `tester_firmware/pc_uart_tester/`.
+- Browser GUI for the PC UART tester.
+- MicroPython UART tester scaffold in
+  `tester_firmware/micropython_uart_tester/`.
+- First tester PASS/FAIL checks for Stage 15 validity outputs.
+- Volatile firmware-side ADC injection for PC tester stimulus.
+- Saved PC tester profiles and automated JSON/PDF test reports.
+- PC tester run history and fault-code exclusions in GUI, CLI, and
+  MicroPython scaffold.
 - Thin Arduino `setup()`/`loop()` wrapper.
 - Minimal UART HAL interface.
 - ESP32 UART HAL implementation that prints the boot banner.
@@ -77,6 +91,10 @@ Not implemented yet:
 - SoC algorithm.
 - SoH algorithm.
 - Dashboard/configurator forms for runtime config edits.
+- Production-qualified validation thresholds and hardware-in-loop evidence.
+- External analog stimulus hardware in tester firmware.
+- Embedded ESP32 tester firmware port.
+- Embedded/CI automated regression test reporting.
 
 Preferred build command when PlatformIO is installed:
 

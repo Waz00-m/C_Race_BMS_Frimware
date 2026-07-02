@@ -37,14 +37,19 @@ The target architecture is:
 
 ## Current Implementation Position
 
-The project has completed Stage 14. The next implementation target should be
-chosen after hardware validation of the active profile, INA226 profile,
-configurator-generated profiles, and the config/NVM diagnostic commands.
+The project has completed a first Stage 15 measurement-validation
+implementation and has started Stage 16 as a separate PC UART tester
+foundation with firmware-side ADC injection. The next implementation target
+should be chosen after hardware
+validation of the active profile, INA226 profile, configurator-generated
+profiles, config/NVM diagnostic commands, Stage 15 validity/reason outputs, and
+the Stage 16 tester command/response loop.
 
 Prototype telemetry tooling exists through `p0_bms_dashboard.py`, but the
 portable firmware library now has its staged ESP32 foundation, board-profile
-layer, drag/drop configurator workflow tools, current-sensor backend layer, and
-INA226 I2C current path, and a first config/NVM service.
+layer, drag/drop configurator workflow tools, current-sensor backend layer,
+INA226 I2C current path, a first config/NVM service, a first measurement
+validation truth layer, and a separate tester firmware scaffold.
 
 Stage 1 proved:
 
@@ -180,6 +185,37 @@ Stage 14 proved:
 - User-facing diagnostic channel indexes are one-based.
 - `CFG_REG.config_dirty` reports unsaved config edits.
 - `CFG,SAVE` remains the explicit flash-write action.
+
+Stage 15 proved:
+
+- `bms_measurement_validation` validates voltage taps, reconstructed cells,
+  current, and temperature before fault logic trusts them.
+- `MEAS_REG` exposes tap validity, cell validity, and invalid-reason bitmaps.
+- `ACQ_REG.stuck_bitmap` exposes repeated ADC readings for analog channels.
+- Invalid measurement state can raise `BMS_FAULT_CODE_MEASUREMENT_INVALID`
+  instead of turning bad readings into voltage/current/temperature faults.
+- Diagnostic responses and dashboard parsing expose validity and reason fields
+  for bench validation.
+
+Stage 16 started:
+
+- Tester firmware lives separately in
+  `tester_firmware/pc_uart_tester/` and
+  `tester_firmware/micropython_uart_tester/`.
+- The immediate tester is PC Python based and sends diagnostic UART commands.
+- A browser GUI is available for the PC tester in
+  `tester_firmware/pc_uart_tester/pc_bms_tester_gui.py`.
+- The MicroPython tester remains a later embedded-port scaffold.
+- The tester parses `RESP,...` responses and checks Stage 15 validity fields.
+- Known faults must be excluded only through explicit tester-side toggles and
+  fault-code values; do not hardcode bench faults as expected behavior.
+- The PC tester may use `GET,INJECT` and `DIAG,ADC,...` for volatile
+  firmware-side ADC stimulus. This is not a replacement for later external
+  tester hardware.
+- PC tester profiles and generated JSON/PDF reports live under
+  `tester_firmware/pc_uart_tester/`; generated report files are not source.
+- The PC tester GUI, PC CLI, and MicroPython scaffold should share the
+  fault-code exclusion model based on `GET,FAULT CODES=[...]`.
 
 Do not skip ahead into CAN, balancing, high-current validation, production
 sleep behavior, or real SoH until the staged foundation and hardware truth are
@@ -799,7 +835,7 @@ For Stage 1, the correct final statement is similar to:
 
 Do not implement these until their stage arrives:
 
-- Cell tap validation
+- Production-tuned validation thresholds
 - Moving average filters
 - Deep sleep
 - Wake-source policy
@@ -807,7 +843,8 @@ Do not implement these until their stage arrives:
 - Cell balancing
 - SoH algorithm
 - Diagnostic override tokens
-- Tester firmware
+- Tester hardware stimulus beyond the Stage 16 UART scaffold
+- OTA update infrastructure
 - Production fault latching
 
 This no-go list exists to keep the project from collapsing back into a large

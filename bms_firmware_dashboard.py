@@ -19,6 +19,7 @@ Useful firmware commands:
     GET,FAULT
     GET,SLEEP
     GET,TAPS
+    GET,CFG
 """
 
 import csv
@@ -69,6 +70,22 @@ FAULT_CODES = {
     "0x3001": "Cell temperature high",
     "0x3003": "Temperature sensor fault",
     "0x4001": "ADC read failure",
+    "0x4002": "Measurement invalid",
+}
+
+VALIDATION_REASON_BITS = {
+    0x00000001: "ADC missing",
+    0x00000002: "ADC range",
+    0x00000004: "Tap range",
+    0x00000008: "Tap order",
+    0x00000010: "Cell range",
+    0x00000020: "Tap step",
+    0x00000040: "Cell step",
+    0x00000080: "ADC stuck",
+    0x00000100: "Current sensor",
+    0x00000200: "Current range",
+    0x00000400: "Temperature sensor",
+    0x00000800: "Temperature range",
 }
 
 
@@ -219,7 +236,9 @@ class FirmwareDashboard:
             "connection", "mode", "uptime", "tick", "pack_v", "current_a",
             "fault_primary", "fault_name", "severity", "warn_hex",
             "fault_hex", "latched_hex", "events", "warnings", "faults",
-            "current_adc", "acq_valid", "sleep_decision", "sleep_reason",
+            "current_adc", "acq_valid", "acq_stuck", "cell_valid",
+            "tap_valid", "temp_valid", "current_valid",
+            "validation_reasons", "sleep_decision", "sleep_reason",
             "sleep_allowed", "sleep_threshold", "last_command",
             "last_response", "latest_line",
         ]:
@@ -308,6 +327,10 @@ class FirmwareDashboard:
         fault_items = [
             ("Warn hex", "warn_hex"), ("Active hex", "fault_hex"),
             ("Latched hex", "latched_hex"), ("ACQ valid", "acq_valid"),
+            ("ACQ stuck", "acq_stuck"), ("Cell valid", "cell_valid"),
+            ("Tap valid", "tap_valid"), ("Temp valid", "temp_valid"),
+            ("Current valid", "current_valid"),
+            ("Validation", "validation_reasons"),
             ("Sleep threshold", "sleep_threshold"),
             ("Warnings", "warnings"), ("Active faults", "faults"),
         ]
@@ -405,6 +428,15 @@ class FirmwareDashboard:
         self.vars["fault_primary"].set(fault_hex)
         self.vars["fault_name"].set(FAULT_CODES.get(fault_hex, "Unknown"))
 
+    def _set_validation_reason(self, *values):
+        combined = 0
+        for value in values:
+            if value is not None:
+                combined |= parse_int(value)
+        self.vars["validation_reasons"].set(
+            decode_bits(combined, VALIDATION_REASON_BITS)
+        )
+
     def _handle_line(self, line):
         self.vars["latest_line"].set(line)
         self.log_writer.writerow([dt.datetime.now().isoformat(timespec="seconds"), line])
@@ -462,6 +494,19 @@ class FirmwareDashboard:
         if "cell_mV" in data:
             for index, value in enumerate(parse_int_list(data["cell_mV"], 6)):
                 self.cell_vars[index].set(fmt_mv(value))
+        if "cell_valid" in data:
+            self.vars["cell_valid"].set(f"0x{parse_int(data['cell_valid']):08X}")
+        if "tap_valid" in data:
+            self.vars["tap_valid"].set(f"0x{parse_int(data['tap_valid']):08X}")
+        if "temp_valid" in data:
+            self.vars["temp_valid"].set(f"0x{parse_int(data['temp_valid']):08X}")
+        if "current_valid" in data:
+            self.vars["current_valid"].set("Yes" if parse_int(data["current_valid"]) else "No")
+        self._set_validation_reason(
+            data.get("voltage_reason"),
+            data.get("current_reason"),
+            data.get("temp_reason"),
+        )
         if "temp_dC" in data:
             for index, value in enumerate(parse_temp_list(data["temp_dC"], 4)):
                 self.temp_vars[index].set(fmt_dc(value))
@@ -478,6 +523,8 @@ class FirmwareDashboard:
                 self.temp_adc_vars[index].set("--" if value is None else f"{value} mV")
         if "valid" in data:
             self.vars["acq_valid"].set(f"0x{parse_int(data['valid']):08X}")
+        if "stuck" in data:
+            self.vars["acq_stuck"].set(f"0x{parse_int(data['stuck']):08X}")
 
     def _apply_fault_data(self, data):
         self._set_hex_faults(
@@ -536,11 +583,19 @@ class FirmwareDashboard:
             if "CELL_MV" in data:
                 for index, value in enumerate(parse_int_list(data["CELL_MV"], 6)):
                     self.cell_vars[index].set(fmt_mv(value))
+            if "VALID" in data:
+                self.vars["cell_valid"].set(f"0x{parse_int(data['VALID']):08X}")
+            if "TAP_VALID" in data:
+                self.vars["tap_valid"].set(f"0x{parse_int(data['TAP_VALID']):08X}")
+            self._set_validation_reason(data.get("REASON"))
         elif kind == "CURRENT":
             if "CURRENT_MA" in data:
                 self.vars["current_a"].set(fmt_ma(parse_int(data["CURRENT_MA"])))
             if "ADC_MV" in data:
                 self.vars["current_adc"].set(f"{parse_int(data['ADC_MV'])} mV")
+            if "VALID" in data:
+                self.vars["current_valid"].set("Yes" if parse_int(data["VALID"]) else "No")
+            self._set_validation_reason(data.get("REASON"))
         elif kind == "TEMP":
             if "TEMP_DC" in data:
                 for index, value in enumerate(parse_temp_list(data["TEMP_DC"], 4)):
@@ -548,8 +603,19 @@ class FirmwareDashboard:
             if "ADC_MV" in data:
                 for index, value in enumerate(parse_int_list(data["ADC_MV"], 4)):
                     self.temp_adc_vars[index].set("--" if value is None else f"{value} mV")
+            if "VALID" in data:
+                self.vars["temp_valid"].set(f"0x{parse_int(data['VALID']):08X}")
+            self._set_validation_reason(data.get("REASON"))
         elif kind == "FAULT":
             self._apply_fault_data(data)
+            if "CELL_VALID" in data:
+                self.vars["cell_valid"].set(f"0x{parse_int(data['CELL_VALID']):08X}")
+            if "TAP_VALID" in data:
+                self.vars["tap_valid"].set(f"0x{parse_int(data['TAP_VALID']):08X}")
+            if "CURRENT_VALID" in data:
+                self.vars["current_valid"].set("Yes" if parse_int(data["CURRENT_VALID"]) else "No")
+            if "TEMP_VALID" in data:
+                self.vars["temp_valid"].set(f"0x{parse_int(data['TEMP_VALID']):08X}")
         elif kind == "SLEEP":
             self._apply_sleep_data(data)
         elif kind == "TAPS":
@@ -559,6 +625,11 @@ class FirmwareDashboard:
             if "CELL_MV" in data:
                 for index, value in enumerate(parse_int_list(data["CELL_MV"], 6)):
                     self.cell_vars[index].set(fmt_mv(value))
+            if "TAP_VALID" in data:
+                self.vars["tap_valid"].set(f"0x{parse_int(data['TAP_VALID']):08X}")
+            if "CELL_VALID" in data:
+                self.vars["cell_valid"].set(f"0x{parse_int(data['CELL_VALID']):08X}")
+            self._set_validation_reason(data.get("REASON"))
 
     def _poll_queue(self):
         while True:

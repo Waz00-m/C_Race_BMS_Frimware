@@ -1,0 +1,27 @@
+"""Bench configuration for the MicroPython BMS UART tester."""
+
+UART_ID = 2
+UART_BAUD = 115200
+UART_TX_PIN = 17
+UART_RX_PIN = 16
+
+COMMAND_TIMEOUT_MS = 1800
+LINE_POLL_DELAY_MS = 20
+BOOT_SETTLE_MS = 1000
+
+# Strict baseline. Known-fault exclusions are off by default.
+EXPECTED_CELL_VALID_MASK = 0x0000003F
+EXPECTED_TAP_VALID_MASK = 0x0000003F
+EXPECTED_VOLTAGE_REASON = 0x00000000
+EXPECTED_CURRENT_VALID = 1
+EXPECTED_CURRENT_REASON = 0x00000000
+EXPECTED_TEMP_VALID_MASK = 0x0000000F
+EXPECTED_TEMP_REASON = 0x00000000
+
+# Optional known-fault exclusion mode. Keep disabled for normal validation.
+KNOWN_FAULTS_ENABLED = False
+KNOWN_FAULT_CODES = ()
+
+# Current bench example for intentionally faulty T1:
+# KNOWN_FAULTS_ENABLED = True
+# KNOWN_FAULT_CODES = (0x3003,)

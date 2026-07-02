@@ -6,6 +6,7 @@
 #include "bms_adc_hal.h"
 #include "bms_current_sensor.h"
 #include "bms_measurement_config.h"
+#include "bms_measurement_validation.h"
 
 static bms_adc_channel_t BMS_Measurement_CellAdcChannel(uint8_t cell_index)
 {
@@ -53,18 +54,24 @@ static bms_status_t BMS_Measurement_ReadAdc(
 {
     uint16_t raw = 0U;
     uint16_t millivolts = 0U;
-
-    bms_status_t status = BMS_HAL_ADC_ReadRaw(channel, &raw);
-    if (status != BMS_STATUS_OK) {
-        return status;
-    }
-
-    status = BMS_HAL_ADC_ReadMilliVolts(channel, &millivolts);
-    if (status != BMS_STATUS_OK) {
-        return status;
-    }
-
     const uint8_t index = (uint8_t)channel;
+
+    if (ctx->regs.diag.adc_injection_enabled &&
+        ((ctx->regs.diag.adc_injection_bitmap & (1UL << index)) != 0UL)) {
+        millivolts = ctx->regs.diag.adc_injection_mV[index];
+        raw = millivolts;
+    } else {
+        bms_status_t status = BMS_HAL_ADC_ReadRaw(channel, &raw);
+        if (status != BMS_STATUS_OK) {
+            return status;
+        }
+
+        status = BMS_HAL_ADC_ReadMilliVolts(channel, &millivolts);
+        if (status != BMS_STATUS_OK) {
+            return status;
+        }
+    }
+
     ctx->regs.acq.raw_adc[index] = raw;
     ctx->regs.acq.adc_mV[index] = millivolts;
     ctx->regs.acq.sample_counter[index]++;
@@ -112,11 +119,6 @@ static uint16_t BMS_Measurement_ConvertTapToMilliVolts(
     }
 
     return (uint16_t)tap_mV;
-}
-
-static uint32_t BMS_Measurement_AllTemperatureValidMask(void)
-{
-    return (1UL << BMS_NUM_TEMPERATURES) - 1UL;
 }
 
 static bool BMS_Measurement_ConvertTemperatureDeciC(
@@ -199,7 +201,12 @@ bms_status_t BMS_Measurement_Init(bms_context_t *ctx)
         return BMS_STATUS_NOT_INITIALIZED;
     }
 
-    return BMS_CurrentSensor_Init();
+    bms_status_t status = BMS_CurrentSensor_Init();
+    if (status != BMS_STATUS_OK) {
+        return status;
+    }
+
+    return BMS_MeasurementValidation_Init(ctx);
 }
 
 bms_status_t BMS_Measurement_UpdateFakeCurrent(bms_context_t *ctx)
@@ -212,6 +219,7 @@ bms_status_t BMS_Measurement_UpdateFakeCurrent(bms_context_t *ctx)
     meas->current_mA = BMS_FAKE_CURRENT_MA;
     meas->current_abs_mA = 0UL;
     meas->current_valid = true;
+    meas->current_invalid_reason_bitmap = BMS_MEAS_VALIDATION_REASON_NONE;
 
     return BMS_STATUS_OK;
 }
@@ -224,9 +232,16 @@ bms_status_t BMS_Measurement_UpdateFakeVoltage(bms_context_t *ctx)
 
     bms_meas_reg_t *meas = &ctx->regs.meas;
 
+    uint32_t cumulative_mV = 0UL;
+
     for (uint8_t i = 0U; i < BMS_NUM_CELLS; ++i) {
         meas->cell_mV[i] = BMS_FAKE_CELL_MV;
+        cumulative_mV += BMS_FAKE_CELL_MV;
+        meas->tap_mV[i] = cumulative_mV;
     }
+    meas->tap_valid_bitmap = BMS_MeasurementValidation_AllCellMask();
+    meas->cell_valid_bitmap = BMS_MeasurementValidation_AllCellMask();
+    meas->voltage_invalid_reason_bitmap = BMS_MEAS_VALIDATION_REASON_NONE;
 
     BMS_Measurement_RecalculateCellSummary(meas);
 
@@ -244,7 +259,10 @@ bms_status_t BMS_Measurement_UpdateFakeTemperature(bms_context_t *ctx)
     for (uint8_t i = 0U; i < BMS_NUM_TEMPERATURES; ++i) {
         meas->temperature_dC[i] = BMS_FAKE_TEMPERATURE_DC;
     }
-    meas->temperature_valid_bitmap = BMS_Measurement_AllTemperatureValidMask();
+    meas->temperature_valid_bitmap =
+        BMS_MeasurementValidation_AllTemperatureMask();
+    meas->temperature_invalid_reason_bitmap =
+        BMS_MEAS_VALIDATION_REASON_NONE;
 
     return BMS_STATUS_OK;
 }
@@ -291,7 +309,7 @@ bms_status_t BMS_Measurement_UpdateCurrent(bms_context_t *ctx)
         (current_mA < 0L) ? (uint32_t)(-current_mA) : (uint32_t)current_mA;
     ctx->regs.meas.current_valid = current_valid;
 
-    return BMS_STATUS_OK;
+    return BMS_MeasurementValidation_UpdateCurrent(ctx);
 #else
     return BMS_Measurement_UpdateFakeCurrent(ctx);
 #endif
@@ -342,7 +360,7 @@ bms_status_t BMS_Measurement_UpdateVoltage(bms_context_t *ctx)
 
     BMS_Measurement_RecalculateCellSummary(meas);
 
-    return BMS_STATUS_OK;
+    return BMS_MeasurementValidation_UpdateVoltage(ctx);
 #else
     return BMS_Measurement_UpdateFakeVoltage(ctx);
 #endif
@@ -379,7 +397,7 @@ bms_status_t BMS_Measurement_UpdateTemperature(bms_context_t *ctx)
         meas->temperature_dC[i] = temperature_dC;
     }
 
-    return BMS_STATUS_OK;
+    return BMS_MeasurementValidation_UpdateTemperature(ctx);
 #else
     return BMS_Measurement_UpdateFakeTemperature(ctx);
 #endif

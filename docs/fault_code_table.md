@@ -4,6 +4,16 @@ This table maps stable BMS fault codes to their meaning and supporting detail
 registers. A fault code identifies the fault category; bitmaps and measurement
 registers provide the detailed source.
 
+`GET,FAULT` reports active fault-code categories in addition to the primary
+fault:
+
+```text
+RESP,FAULT,...,PRIMARY=0x1002,CODES=[0x1002,0x3003],...
+```
+
+The PC tester's known-fault exclusion field uses these codes. Exclusions are
+tester expectations only; they do not suppress firmware fault generation.
+
 ## Fault Codes
 
 | Code | Name | Severity Source | Meaning | Detail Source | Status |
@@ -18,6 +28,7 @@ registers provide the detailed source.
 | `0x3001` | Cell temperature high | Fault supervisor | One or more temperature channels exceed high fault threshold | `MEAS_REG.temperature_dC[]` | Implemented |
 | `0x3003` | Temperature sensor fault | Fault supervisor | Temperature channel open, short, or implausible | `MEAS_REG.temperature_valid_bitmap` | Implemented |
 | `0x4001` | ADC read failure | Fault supervisor | One or more expected ADC channels are not valid | `ACQ_REG.sensor_valid_bitmap` | Implemented |
+| `0x4002` | Measurement invalid | Fault supervisor | Converted measurement failed validation before fault checks | `MEAS_REG.*_valid_bitmap`, `MEAS_REG.*_invalid_reason_bitmap`, `ACQ_REG.stuck_bitmap` | Implemented |
 
 ## Warning Bitmap
 
@@ -71,3 +82,21 @@ For INA226 current profiles, the current ADC bit is not expected because current
 comes from I2C. In that case, `MEAS_REG.current_valid` is the current-sensor
 truth source, and a missing or failed INA226 read maps to primary fault
 `0x2003`.
+
+## Measurement Validation Bitmaps
+
+Stage 15 adds validation fields so diagnostics can explain whether converted
+values are trustworthy:
+
+| Field | Meaning |
+|---|---|
+| `MEAS_REG.tap_valid_bitmap` | Valid cumulative voltage taps. |
+| `MEAS_REG.cell_valid_bitmap` | Valid reconstructed cell voltages. |
+| `MEAS_REG.voltage_invalid_reason_bitmap` | Shared reason bits for voltage validation failures. |
+| `MEAS_REG.current_valid` | Current value may be consumed by fault logic. |
+| `MEAS_REG.current_invalid_reason_bitmap` | Shared reason bits for current validation failures. |
+| `MEAS_REG.temperature_valid_bitmap` | Valid temperature channels. |
+| `MEAS_REG.temperature_invalid_reason_bitmap` | Shared reason bits for temperature validation failures. |
+| `ACQ_REG.stuck_bitmap` | ADC channels that repeated exactly for the stuck-sample limit. |
+
+Invalid reason bits are documented in `docs/measurement_validation.md`.

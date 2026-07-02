@@ -6,3 +6,4 @@ platformio.user.ini
 .vscode/ipch
 __pycache__/
 *.pyc
+tester_firmware/pc_uart_tester/reports/

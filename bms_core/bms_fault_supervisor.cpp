@@ -3,6 +3,7 @@
 #include "bms_adc_hal.h"
 #include "bms_current_sensor.h"
 #include "bms_fault_codes.h"
+#include "bms_measurement_validation.h"
 
 static uint32_t BMS_FaultSupervisor_ExpectedSensorMask(void)
 {
@@ -36,6 +37,14 @@ static void BMS_FaultSupervisor_CheckSensorValidity(
             fault,
             BMS_FAULT_CODE_ADC_READ_FAILURE);
     }
+
+    if ((acq->stuck_bitmap & expected) != 0UL) {
+        fault->warning_bitmap |= BMS_WARNING_SENSOR_INVALID;
+        fault->active_fault_bitmap |= BMS_FAULT_SENSOR_INVALID;
+        BMS_FaultSupervisor_SetPrimaryIfEmpty(
+            fault,
+            BMS_FAULT_CODE_MEASUREMENT_INVALID);
+    }
 }
 
 static void BMS_FaultSupervisor_CheckVoltage(
@@ -54,6 +63,17 @@ static void BMS_FaultSupervisor_CheckVoltage(
     const uint16_t imbalance_warn =
         cfg->voltage_thresholds_mV[
             BMS_VOLTAGE_THRESHOLD_CELL_IMBALANCE_WARNING_MV];
+    const uint32_t all_cells = BMS_MeasurementValidation_AllCellMask();
+
+    if (((meas->tap_valid_bitmap & all_cells) != all_cells) ||
+        ((meas->cell_valid_bitmap & all_cells) != all_cells)) {
+        fault->warning_bitmap |= BMS_WARNING_SENSOR_INVALID;
+        fault->active_fault_bitmap |= BMS_FAULT_SENSOR_INVALID;
+        BMS_FaultSupervisor_SetPrimaryIfEmpty(
+            fault,
+            BMS_FAULT_CODE_MEASUREMENT_INVALID);
+        return;
+    }
 
     for (uint8_t i = 0U; i < BMS_NUM_CELLS; ++i) {
         const uint16_t cell_mV = meas->cell_mV[i];
@@ -205,7 +225,15 @@ bms_status_t BMS_FaultSupervisor_Update(bms_context_t *ctx)
     BMS_FaultSupervisor_CheckCurrent(&ctx->regs.meas, &ctx->regs.cfg, &next);
     BMS_FaultSupervisor_CheckTemperature(&ctx->regs.meas, &ctx->regs.cfg, &next);
 
-    if (next.active_fault_bitmap != 0UL) {
+    if (ctx->regs.diag.adc_injection_enabled) {
+        if (next.active_fault_bitmap != 0UL) {
+            next.fault_severity = BMS_FAULT_SEVERITY_CRITICAL;
+            next.latched_fault_bitmap |= next.active_fault_bitmap;
+        } else if (next.warning_bitmap != 0UL) {
+            next.fault_severity = BMS_FAULT_SEVERITY_WARNING;
+        }
+        ctx->regs.sys.system_mode = BMS_SYSTEM_MODE_DIAGNOSTIC_MODE;
+    } else if (next.active_fault_bitmap != 0UL) {
         next.fault_severity = BMS_FAULT_SEVERITY_CRITICAL;
         next.latched_fault_bitmap |= next.active_fault_bitmap;
         ctx->regs.sys.system_mode = BMS_SYSTEM_MODE_FAULT_ACTIVE;

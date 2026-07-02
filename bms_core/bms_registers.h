@@ -22,17 +22,23 @@ typedef struct {
     uint32_t filter_ready_bitmap;
     uint32_t sample_counter[BMS_ACQ_CHANNEL_COUNT];
     uint32_t sensor_valid_bitmap;
+    uint32_t stuck_bitmap;
 } bms_acq_reg_t;
 
 typedef struct {
     uint32_t tap_mV[BMS_NUM_CELLS];
+    uint32_t tap_valid_bitmap;
     uint16_t cell_mV[BMS_NUM_CELLS];
+    uint32_t cell_valid_bitmap;
+    uint32_t voltage_invalid_reason_bitmap;
     uint32_t pack_mV;
     int32_t current_mA;
     uint32_t current_abs_mA;
     bool current_valid;
+    uint32_t current_invalid_reason_bitmap;
     int16_t temperature_dC[BMS_NUM_TEMPERATURES];
     uint32_t temperature_valid_bitmap;
+    uint32_t temperature_invalid_reason_bitmap;
     uint8_t min_cell_index;
     uint8_t max_cell_index;
     uint16_t cell_delta_mV;
@@ -68,6 +74,9 @@ typedef struct {
     uint16_t test_id;
     uint16_t response_code;
     uint32_t override_token;
+    bool adc_injection_enabled;
+    uint32_t adc_injection_bitmap;
+    uint16_t adc_injection_mV[BMS_ACQ_CHANNEL_COUNT];
 } bms_diag_reg_t;
 
 typedef struct {

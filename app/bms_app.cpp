@@ -90,9 +90,10 @@ static void BMS_App_PrintRegisterSnapshot(void)
     (void)snprintf(
         line,
         sizeof(line),
-        "ACQ: valid=0x%08lX filter_ready=0x%08lX channels=%u",
+        "ACQ: valid=0x%08lX filter_ready=0x%08lX stuck=0x%08lX channels=%u",
         (unsigned long)regs->acq.sensor_valid_bitmap,
         (unsigned long)regs->acq.filter_ready_bitmap,
+        (unsigned long)regs->acq.stuck_bitmap,
         (unsigned)BMS_ACQ_CHANNEL_COUNT);
     BMS_App_SendLine(line);
 
@@ -226,7 +227,7 @@ static void BMS_App_PrintMeasurementHeartbeat(void)
     }
 
     const bms_meas_reg_t *meas = &snapshot.regs.meas;
-    char line[224];
+    char line[320];
     char temp0[12];
     char temp1[12];
     char temp2[12];
@@ -240,10 +241,12 @@ static void BMS_App_PrintMeasurementHeartbeat(void)
     (void)snprintf(
         line,
         sizeof(line),
-        "MEAS: pack_mV=%lu current_mA=%ld current_valid=%u temp_dC=[%s,%s,%s,%s] temp_valid=0x%08lX cell_mV=[%u,%u,%u,%u,%u,%u]",
+        "MEAS: pack_mV=%lu current_mA=%ld current_valid=%u cell_valid=0x%08lX tap_valid=0x%08lX temp_dC=[%s,%s,%s,%s] temp_valid=0x%08lX cell_mV=[%u,%u,%u,%u,%u,%u] voltage_reason=0x%08lX current_reason=0x%08lX temp_reason=0x%08lX",
         (unsigned long)meas->pack_mV,
         (long)meas->current_mA,
         (unsigned)meas->current_valid,
+        (unsigned long)meas->cell_valid_bitmap,
+        (unsigned long)meas->tap_valid_bitmap,
         temp0,
         temp1,
         temp2,
@@ -254,13 +257,16 @@ static void BMS_App_PrintMeasurementHeartbeat(void)
         (unsigned)meas->cell_mV[2],
         (unsigned)meas->cell_mV[3],
         (unsigned)meas->cell_mV[4],
-        (unsigned)meas->cell_mV[5]);
+        (unsigned)meas->cell_mV[5],
+        (unsigned long)meas->voltage_invalid_reason_bitmap,
+        (unsigned long)meas->current_invalid_reason_bitmap,
+        (unsigned long)meas->temperature_invalid_reason_bitmap);
     BMS_App_SendLine(line);
 
     (void)snprintf(
         line,
         sizeof(line),
-        "ACQ: adc_mV cell=[%u,%u,%u,%u,%u,%u] current=%u temp=[%u,%u,%u,%u] valid=0x%08lX",
+        "ACQ: adc_mV cell=[%u,%u,%u,%u,%u,%u] current=%u temp=[%u,%u,%u,%u] valid=0x%08lX stuck=0x%08lX",
         (unsigned)snapshot.regs.acq.adc_mV[BMS_ADC_CHANNEL_CELL_1],
         (unsigned)snapshot.regs.acq.adc_mV[BMS_ADC_CHANNEL_CELL_2],
         (unsigned)snapshot.regs.acq.adc_mV[BMS_ADC_CHANNEL_CELL_3],
@@ -272,7 +278,8 @@ static void BMS_App_PrintMeasurementHeartbeat(void)
         (unsigned)snapshot.regs.acq.adc_mV[BMS_ADC_CHANNEL_TEMP_2],
         (unsigned)snapshot.regs.acq.adc_mV[BMS_ADC_CHANNEL_TEMP_3],
         (unsigned)snapshot.regs.acq.adc_mV[BMS_ADC_CHANNEL_TEMP_4],
-        (unsigned long)snapshot.regs.acq.sensor_valid_bitmap);
+        (unsigned long)snapshot.regs.acq.sensor_valid_bitmap,
+        (unsigned long)snapshot.regs.acq.stuck_bitmap);
     BMS_App_SendLine(line);
 
     (void)snprintf(
@@ -432,7 +439,7 @@ bms_status_t BMS_App_Init(void)
     }
 
     BMS_App_SendLine("BMS SCHEDULER TICK STARTED");
-    BMS_App_SendLine("DIAG READY: HELP, GET,SNAPSHOT, GET,VOLT, GET,CURRENT, GET,TEMP, GET,FAULT, GET,SLEEP, GET,TAPS, GET,CFG, CFG,SET, CFG,SAVE, CFG,LOAD, CFG,RESET");
+    BMS_App_SendLine("DIAG READY: HELP, GET,SNAPSHOT, GET,VOLT, GET,CURRENT, GET,TEMP, GET,FAULT, GET,SLEEP, GET,TAPS, GET,CFG, GET,INJECT, CFG,SET, CFG,SAVE, CFG,LOAD, CFG,RESET, DIAG,ADC,...");
     return BMS_STATUS_OK;
 }
 

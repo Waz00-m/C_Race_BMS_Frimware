@@ -61,6 +61,21 @@ static void BMS_ESP32_Display_PrintHeader(const char *title)
     g_display.drawLine(0, 10, 127, 10, SSD1306_WHITE);
 }
 
+static void BMS_ESP32_Display_PrintModeBadge(
+    const bms_register_snapshot_t *snapshot)
+{
+    if ((snapshot == NULL) ||
+        (snapshot->regs.sys.system_mode != BMS_SYSTEM_MODE_DIAGNOSTIC_MODE)) {
+        return;
+    }
+
+    g_display.setTextSize(1);
+    g_display.setTextColor(SSD1306_WHITE);
+    g_display.fillRect(74, 56, 54, 8, SSD1306_BLACK);
+    g_display.setCursor(74, 56);
+    g_display.print("DIAG_MODE");
+}
+
 static void BMS_ESP32_Display_PrintVoltageV(uint32_t milli_volts, uint8_t digits)
 {
     g_display.print((float)milli_volts / 1000.0f, digits);
@@ -138,6 +153,7 @@ static void BMS_ESP32_Display_ShowVoltagePage(
     g_display.print("MAX:");
     BMS_ESP32_Display_PrintVoltageV(OLED_CELL_DISPLAY_MAX_MV, 2);
 
+    BMS_ESP32_Display_PrintModeBadge(snapshot);
     g_display.display();
 }
 
@@ -164,6 +180,7 @@ static void BMS_ESP32_Display_ShowCurrentPage(
             1);
     }
 
+    BMS_ESP32_Display_PrintModeBadge(snapshot);
     g_display.display();
 }
 
@@ -190,6 +207,7 @@ static void BMS_ESP32_Display_ShowTemperaturePage(
     g_display.print("T4:");
     BMS_ESP32_Display_PrintTemperatureC(snapshot, 3U);
 
+    BMS_ESP32_Display_PrintModeBadge(snapshot);
     g_display.display();
 }
 

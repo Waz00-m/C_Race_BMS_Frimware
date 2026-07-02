@@ -625,3 +625,128 @@ Removed or avoided:
 - No scheduler task writes flash.
 - No measurement or fault code writes config directly.
 - Runtime current-sensor calibration edits are still reserved for a later pass.
+
+### Stage 15 - Measurement Validation And Fault Truth
+
+Added:
+
+- `bms_measurement_validation.h/.cpp`.
+- Voltage validation fields:
+  - `MEAS_REG.tap_valid_bitmap`
+  - `MEAS_REG.cell_valid_bitmap`
+  - `MEAS_REG.voltage_invalid_reason_bitmap`
+- Current validation reason field:
+  - `MEAS_REG.current_invalid_reason_bitmap`
+- Temperature validation reason field:
+  - `MEAS_REG.temperature_invalid_reason_bitmap`
+- Acquisition stuck-channel bitmap:
+  - `ACQ_REG.stuck_bitmap`
+- Fault code:
+  - `0x4002` measurement invalid
+- Diagnostic validity output in:
+  - `GET,TAPS`
+  - `GET,VOLT`
+  - `GET,CURRENT`
+  - `GET,TEMP`
+  - `GET,FAULT`
+- Firmware dashboard display of validity bitmaps and decoded validation reasons.
+- `docs/measurement_validation.md`.
+
+Changed:
+
+- Measurement updates now run validation after conversion.
+- Fault supervisor gates voltage fault decisions on valid tap and cell bitmaps.
+- Invalid voltage data now reports the sensor-invalid fault path with primary
+  `0x4002` instead of being treated as undervoltage/overvoltage truth.
+- Telemetry heartbeat now includes validation bitmaps and invalid-reason fields.
+
+Removed or avoided:
+
+- No protection outputs, balancing, SoC, SoH, CAN, OTA, or tester firmware were
+  added.
+- Invalid readings are not clamped into safe-looking values for fault decisions.
+
+### Stage 16 - PC UART Tester Foundation
+
+Added:
+
+- Separate tester firmware folder:
+  - `tester_firmware/pc_uart_tester/`
+  - `tester_firmware/micropython_uart_tester/`
+- PC tester files:
+  - `pc_bms_uart_tester.py`
+  - `pc_bms_tester_gui.py`
+  - `README.md`
+- MicroPython tester files:
+  - `tester_config.py`
+  - `bms_uart_tester.py`
+  - `main.py`
+  - `README.md`
+- Tester documentation:
+  - `docs/tester_firmware.md`
+
+Changed:
+
+- Project status now treats tester firmware as started, but still separate from
+  the target BMS firmware.
+- PC is now the immediate tester target; the embedded tester remains a later
+  port path.
+- Browser GUI added for the PC tester with automated test, manual command
+  buttons, expected-value sliders, known-fault exclusions, and response meters.
+- Browser GUI now includes ADC injection stimulus controls for cell/tap ADC,
+  current ADC, and temperature ADC.
+- Target firmware diagnostic service now supports volatile ADC injection:
+  - `GET,INJECT`
+  - `DIAG,ADC,SET,CELL,<1-6>,<adc_mV>`
+  - `DIAG,ADC,SET,CURRENT,<adc_mV>`
+  - `DIAG,ADC,SET,TEMP,<1-4>,<adc_mV>`
+  - `DIAG,ADC,ON`
+  - `DIAG,ADC,OFF`
+  - `DIAG,ADC,CLEAR,ALL`
+- Injected ADC values are applied at the acquisition layer, then normal
+  conversion, validation, fault supervision, and diagnostics consume them.
+- Injected channels skip stuck-ADC detection so held test values do not create
+  false stuck-sensor failures.
+- `GET,FAULT` now includes `CODES=[...]` so the tester can identify all active
+  fault-code categories, not only the primary code.
+- Browser GUI known-fault exclusions are now fault-code based. Excluded checks
+  are shown as `EXCLUDED`, not normal passing behavior.
+- The GUI fault-code info button opens a local fault-code table.
+- While ADC injection is enabled, the firmware reports diagnostic mode and the
+  GUI shows a bottom-right `DIAG_MODE` badge.
+- The ESP32 OLED display overlays `DIAG_MODE` in the bottom-right corner while
+  diagnostic ADC injection is active.
+- Browser GUI now supports saved test profiles for expected masks, known fault
+  codes, and ADC stimulus settings.
+- Automated GUI tests now generate timestamped JSON logs and PDF reports in the
+  tester `reports/` folder.
+- PDF reports now use a tabulated `C-RACE LABS` layout with summary cards, run
+  metadata, expected baseline table, check-result table, diagnostic-response
+  table, and fault-code reference section.
+- Browser GUI now shows a run-history table backed by generated JSON reports
+  with result, timestamp, profile, pass/fail counts, port, and PDF links.
+- PC CLI tester now uses the same fault-code exclusion model as the GUI:
+  `known code ...`, `known add ...`, and `--known-fault-codes`.
+- MicroPython tester scaffold now uses fault-code exclusions instead of the
+  earlier temperature-mask-only known-fault path.
+- The GUI timeout field is documented as the command response timeout in
+  seconds; default remains `1.8`.
+- The tester's strict expected state records the fully-valid Prototype-0
+  profile0 validation outputs:
+  - cell valid `0x0000003F`
+  - tap valid `0x0000003F`
+  - current valid `1`
+  - temperature valid `0x0000000F`
+- Known faults are no longer hardcoded as expected behavior.
+- The PC GUI supports explicit known-fault exclusion toggles and fault-code
+  value entry.
+- Tester command handling and suite tests use `try`/`except` guards so UART,
+  parse, or test exceptions become controlled failures instead of crashing the
+  tester shell.
+
+Removed or avoided:
+
+- No tester code was added to `app/`, `bms_core/`, `bms_hal/`,
+  `bms_platform/`, or `bms_boards/`.
+- No external analog signal hardware, relay control, OTA, CAN, SoC, SoH, or
+  protection output behavior was added.

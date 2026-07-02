@@ -297,17 +297,24 @@ Status: implemented in firmware after this calibration session.
 
 ## Objective 5 - Add Validation Before Fault Decisions
 
-The fault supervisor currently trusts the converted cell values. Before using
-the firmware for real protection behavior, add validation for:
+Status: first Stage 15 validation layer implemented and confirmed on
+Prototype-0 profile0 bench hardware. Threshold tuning remains only if real
+hardware creates false positives.
+
+The fault supervisor no longer trusts converted voltage values unless tap and
+cell validity bitmaps show all voltage channels are valid. Validation now covers:
 
 - Tap order monotonicity.
 - Cell voltage physical range.
 - Sudden step changes.
 - Missing or stuck ADC channels.
-- Calibration-not-complete state.
+- Current and temperature validity/reason reporting.
 
-Until this is done, voltage faults are useful for debug but not final protection
-truth.
+Remaining work before production protection truth:
+
+- Confirm validation behavior on floating/disconnected ESP32 inputs.
+- Tune thresholds if real hardware creates false positives.
+- Add richer calibration-complete status later if needed.
 
 ## Objective 6 - Current And Temperature Calibration
 
@@ -326,9 +333,9 @@ Only after measurement truth is acceptable:
 - Decide whether to preserve Prototype-0 CSV output as a compatibility mode.
 - Decide the next production-facing telemetry packet format.
 
-## Objective 8 - Post Stage 14 Board Profile Work
+## Objective 8 - Post Stage 15 Board Profile Work
 
-After Stage 9 through Stage 14, the next architecture work is:
+After Stage 9 through Stage 15, the next architecture work is:
 
 - Keep `BMS_BOARD_PROTOTYPE0_PROFILE0` as the calibrated analog INA240
   Prototype-0 baseline.
@@ -339,7 +346,47 @@ After Stage 9 through Stage 14, the next architecture work is:
 - Continue improving the GUI configurator from the Stage 12.5 drag/drop board
   builder toward richer hardware modules, compatibility checks, and generated
   backend scaffolding.
-- Validate the Stage 14 runtime config edit commands on hardware, then add
-  dashboard/configurator forms on top of them.
-- Define the tester MCU firmware architecture and first UART-based PASS/FAIL
-  test flows.
+- Use the Stage 14/15 diagnostic workflow for hardware calibration closure.
+- Add dashboard/configurator forms on top of runtime config commands.
+- Extend the Stage 16 PC UART tester from PASS/FAIL smoke tests toward richer
+  scripted bench tests.
+
+## Objective 9 - Stage 16 Tester Firmware Foundation
+
+Status: PC UART tester and browser GUI are active in
+`tester_firmware/pc_uart_tester/`. An embedded MicroPython scaffold also exists
+for later porting.
+
+The first tester scope is:
+
+- Send `GET,TAPS`, `GET,VOLT`, `GET,CURRENT`, `GET,TEMP`, and `GET,FAULT`.
+- Send `GET,INJECT` and `DIAG,ADC,...` for volatile firmware-side ADC
+  stimulus.
+- Parse `RESP,...` diagnostic lines.
+- Check strict Stage 15 profile0 validity outputs.
+- Allow known faults only through an explicit tester-side exclusion toggle and
+  entered fault codes from `GET,FAULT CODES=[...]`.
+- Print PASS/FAIL summary.
+- Simulate cell/tap ADC, current ADC, and temperature ADC values inside the
+  target firmware so validation and fault reactions can be exercised without a
+  second tester MCU.
+- Show `DIAG_MODE` in the GUI while firmware-side ADC injection is enabled.
+- Show `DIAG_MODE` on the ESP32 OLED while firmware-side ADC injection is
+  enabled.
+- Save/load PC tester profiles for strict and known-fault test cases.
+- Generate JSON logs and PDF reports for automated PC tester runs.
+- Show a PC tester run-history/trend table from generated reports.
+- Use fault-code exclusions in the PC CLI and MicroPython tester scaffold.
+
+Next tester work:
+
+- Run the PC UART tester against the BMS COM port.
+- Confirm command/response timing without the dashboard connected.
+- Use the browser GUI as the preferred manual tester surface.
+- Review real bench PDF reports and add any missing fields needed for evidence.
+- Port the richer report/history model to embedded tester storage later if the
+  hardware tester needs standalone evidence.
+- Port the tester logic to ESP32 or another MCU later.
+- Add external hardware stimulus later with DACs, digital pots, relays, or a
+  dedicated tester MCU. The current ADC stimulus is firmware-side injection,
+  not physical pin driving.
